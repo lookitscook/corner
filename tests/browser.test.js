@@ -247,3 +247,84 @@ test.describe('mobile', () => {
     await page.screenshot({ path: testInfo.outputPath('mobile.png'), fullPage: true });
   });
 });
+
+test('Ordered dither controls, history, setup persistence, and frozen PNG export', async ({ page }, testInfo) => {
+  await disableWave(page);
+  const styleSelect = page.locator('[data-control="renderStyle"] select');
+  expect(await styleSelect.locator('option').allTextContents()).toEqual(['Smooth', 'Ordered dither']);
+  await styleSelect.selectOption('Ordered dither');
+  const parameters = { orderedSpacing: 2.5, orderedDotSize: 75, orderedLevels: 6, orderedContrast: .8 };
+  for (const [key, value] of Object.entries(parameters)) {
+    await expect(control(page, key)).toBeVisible();
+    await setNumber(page, key, value);
+    expect((await state(page)).settings[key]).toBe(value);
+  }
+  const configured = await state(page);
+  await page.locator('#undo').click();
+  expect(await state(page)).not.toEqual(configured);
+  await page.locator('#redo').click();
+  expect(await state(page)).toEqual(configured);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('corner-gradient-studio.v1')))).toEqual(configured);
+  await page.reload();
+  await page.waitForFunction(() => Boolean(window.CornerStudio));
+  expect(await state(page)).toEqual(configured);
+  await captureBlobs(page);
+  await page.locator('#save-setup').click();
+  const setup = await page.evaluate(() => window.__lastBlob.text());
+  expect(JSON.parse(setup)).toEqual(configured);
+  await page.locator('#reset').click();
+  await page.locator('#setup-file').setInputFiles({ name: 'pattern.json', mimeType: 'application/json', buffer: Buffer.from(setup) });
+  await expect.poll(() => state(page)).toEqual(configured);
+  const invalid = structuredClone(configured);
+  invalid.settings[Object.keys(parameters)[0]] = 0;
+  expect(await page.evaluate(s => { try { CornerStudio.setState(s); return false; } catch { return true; } }, invalid)).toBe(true);
+  expect(await state(page)).toEqual(configured);
+
+  // A larger, brighter contour makes the texture easy to inspect visually.
+  await page.evaluate(() => {
+    const s = CornerStudio.getState();
+    Object.assign(s.settings, { color: '#c8c8c8', width: 768, height: 768, preset: 'Custom' });
+    s.points = [{ x: .98, y: 0 }, { x: .85, y: .4 }, { x: .4, y: .85 }, { x: 0, y: .98 }];
+    CornerStudio.setState(s);
+  });
+  await page.locator('#preview-view').click();
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await page.locator('.inspector').evaluate(el => { el.scrollTop = 0; });
+  await page.locator('#gradient').screenshot({ path: testInfo.outputPath('pattern.png') });
+  await page.screenshot({ path: testInfo.outputPath('editor.png') });
+  await page.evaluate(() => {
+    const s = CornerStudio.getState();
+    // Freeze an animated pose at the full 4K export size.
+    Object.assign(s.settings, { width: 3840, height: 2160, waveEnabled: true });
+    CornerStudio.setState(s);
+  });
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await page.evaluate(() => {
+    const s = CornerStudio.getState().settings;
+    const c = document.createElement('canvas'); c.width = s.width; c.height = s.height;
+    CornerEngine.render(c.getContext('2d'), c.width, c.height, CornerEngine.prepare(CornerStudio.getAnimatedPoints(), s));
+    window.__expectedPixels = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    window.__lastBlob = null;
+    document.querySelector('#export').click();
+    const changed = CornerStudio.getState();
+    changed.settings.renderStyle = 'Smooth'; changed.settings.color = '#ff0000';
+    CornerStudio.setState(changed);
+  });
+  await page.waitForFunction(() => window.__lastBlob?.type === 'image/png' && !document.querySelector('#export').disabled);
+  expect(await page.evaluate(async () => {
+    const bitmap = await createImageBitmap(window.__lastBlob), c = document.createElement('canvas');
+    c.width = bitmap.width; c.height = bitmap.height;
+    c.getContext('2d').drawImage(bitmap, 0, 0);
+    const pixels = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    return bitmap.width === 3840 && bitmap.height === 2160 && pixels.every((v, i) => v === window.__expectedPixels[i]);
+  })).toBe(true);
+
+  // A pre-pattern setup must still load with its original rendering style.
+  const legacy = structuredClone(configured);
+  for (const key of Object.keys(legacy.settings)) {
+    if (key === 'renderStyle' || key.startsWith('ordered')) delete legacy.settings[key];
+  }
+  await page.evaluate(s => CornerStudio.setState(s), legacy);
+  expect((await state(page)).settings.renderStyle).toBe('Smooth');
+  await expect(page.locator('[data-control="orderedSpacing"]')).not.toBeVisible();
+});

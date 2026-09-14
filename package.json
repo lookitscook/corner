@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "npm run test:unit && npm run test:browser",
-    "test:unit": "node --test tests/engine.test.js",
+    "test:unit": "node --test tests/engine.test.js tests/rendering.test.js",
     "test:browser": "playwright test"
   },
   "dependencies": {

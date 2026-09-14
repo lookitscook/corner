@@ -1,6 +1,7 @@
 /* Corner Gradient Studio — Vite entry point. */
 import { GUI } from 'dat.gui';
 import E from './engine.js';
+import { RENDER_DEFAULTS, RENDER_RANGES, RENDER_STYLES, readRenderSettings } from './render-settings.js';
 import './styles.css';
 
 // Preserve the renderer API for integrations and browser verification.
@@ -22,7 +23,7 @@ window.CornerEngine = E;
     waveLength: 1.4, waveComplexity: .4, waveEdges: .35 };
   const WAVE_RANGES = { waveAmplitude: [0, 35, .5], waveSpeed: [0, 1, .01],
     waveLength: [.3, 3, .05], waveComplexity: [0, 1, .05], waveEdges: [0, 1, .05] };
-  const DEFAULT_SETTINGS = { ...WAVE_DEFAULTS, color: '#606060', size: 40, falloff: 1,
+  const DEFAULT_SETTINGS = { ...WAVE_DEFAULTS, ...RENDER_DEFAULTS, color: '#606060', size: 40, falloff: 1,
     blend: 'Smooth', dither: 'Fine grain', mode: 'Through anchors',
     preset: 'Sketch', width: 3840, height: 2160, format: '4K UHD',
     bottom: 40, right: 40, bx: 24.4, by: 4.2, cx: 10, cy: 15.4 };
@@ -53,7 +54,8 @@ window.CornerEngine = E;
     settings.format = currentFormat();
   }
   function stateObject() {
-    const keys = ['color', 'falloff', 'blend', 'dither', 'mode', 'preset', 'width', 'height', ...Object.keys(WAVE_DEFAULTS)];
+    const keys = ['color', 'falloff', 'blend', 'dither', 'mode', 'preset', 'width', 'height',
+      ...Object.keys(WAVE_DEFAULTS), ...Object.keys(RENDER_DEFAULTS)];
     return { format: 'corner-gradient', version: 1,
       settings: Object.fromEntries(keys.map(k => [k, settings[k]])), points: E.copyPoints(points) };
   }
@@ -77,7 +79,7 @@ window.CornerEngine = E;
       throw new Error('The endpoints must be on the bottom and right edges, away from the corner.');
     for (let i = 1; i < 4; i++) if (p[i].x >= p[i - 1].x || p[i].y <= p[i - 1].y)
       throw new Error('The anchors must stay ordered from the bottom edge to the right edge.');
-    const clean = {};
+    const clean = readRenderSettings(s);
     for (const k of ['color', 'falloff', 'blend', 'dither', 'mode', 'preset', 'width', 'height']) clean[k] = s[k];
     for (const [key, fallback] of Object.entries(WAVE_DEFAULTS)) {
       // Older version-1 setups retain their original static appearance.
@@ -101,7 +103,14 @@ window.CornerEngine = E;
       catch (_) { $('save-status-text').textContent = 'Use Save setup to keep your work'; storageAvailable = false; }
     }, 350);
   }
-  function refreshControls() { controllers.forEach(c => c.updateDisplay()); }
+  function refreshControls() {
+    controllers.forEach(c => {
+      c.updateDisplay();
+      const row = c.domElement.closest('li') || c.domElement;
+      const style = row.dataset.renderStyle;
+      if (style) row.style.display = style === settings.renderStyle ? '' : 'none';
+    });
+  }
   function updateHistoryButtons() { $('undo').disabled = historyIndex <= 0; $('redo').disabled = historyIndex >= history.length - 1; }
   function commit() {
     const value = snapshot();
@@ -176,6 +185,19 @@ window.CornerEngine = E;
     addControl(gradient, 'falloff', 'Falloff', [.25, 4, .05], value => {
       settings.falloff = E.clamp(Number(value) || 1, .25, 4); changed();
     });
+    const rendering = folder('Rendering', true);
+    addControl(rendering, 'renderStyle', 'Style', [RENDER_STYLES], () => changed(true));
+    const renderLabels = {
+      orderedSpacing: 'Spacing %', orderedDotSize: 'Dot size %', orderedLevels: 'Tone levels', orderedContrast: 'Contrast',
+    };
+    for (const [key, range] of Object.entries(RENDER_RANGES)) {
+      const c = addControl(rendering, key, renderLabels[key], range, value => {
+        let clean = E.clamp(Number.isFinite(Number(value)) ? Number(value) : RENDER_DEFAULTS[key], range[0], range[1]);
+        if (key === 'orderedLevels') clean = Math.round(clean);
+        settings[key] = clean; changed(true);
+      });
+      c.domElement.closest('li').dataset.renderStyle = 'Ordered dither';
+    }
     const contour = folder('Contour', true);
     addControl(contour, 'preset', 'Starting shape', [[...Object.keys(PRESETS), 'Custom']], value => {
       if (PRESETS[value]) { points = presetPoints(value, extent()); selectedIndex = -1; selected = true; changed(true); }
@@ -195,7 +217,8 @@ window.CornerEngine = E;
     }
     const finish = folder('Finish');
     addControl(finish, 'blend', 'Blend profile', [['Smooth', 'Linear']], () => changed());
-    addControl(finish, 'dither', 'Dither', [['Off', 'Fine grain', 'Ordered 4 × 4']], () => changed());
+    const dither = addControl(finish, 'dither', 'Dither', [['Off', 'Fine grain', 'Ordered 4 × 4']], () => changed());
+    dither.domElement.closest('li').dataset.renderStyle = 'Smooth';
     const middle = folder('Middle anchors');
     addControl(middle, 'bx', 'B · left %', [0, 100, .1], value => moveAnchor(1, Number(value) / 100, points[1].y));
     addControl(middle, 'by', 'B · up %', [0, 100, .1], value => moveAnchor(1, points[1].x, Number(value) / 100));

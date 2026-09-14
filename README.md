@@ -1,6 +1,6 @@
 # Corner — Gradient Studio
 
-A JavaScript canvas editor built with Vite and npm. dat.gui is bundled locally; the app needs no CDN, backend, or CMS.
+A JavaScript canvas editor with smooth and ordered-dither gradient styles, built with Vite and npm. dat.gui is bundled locally; the app needs no CDN, backend, or CMS.
 
 ## Development
 
@@ -52,6 +52,7 @@ For a custom domain or a user/organization Pages site at the domain root, set th
 index.html              Vite entry page
 src/main.js             Editor UI, state, and exports
 src/engine.js           Geometry and Canvas 2D rendering
+src/render-settings.js Rendering parameters and validation
 src/styles.css          Layout and control styling
 public/                 Static assets and third-party license
 tests/                 Geometry and Playwright browser tests

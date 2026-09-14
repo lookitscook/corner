@@ -21,17 +21,33 @@ Click the contour to select it and show its anchors. Click the empty canvas to d
 ## Controls
 
 - **Gradient:** corner color, overall size, and falloff. Size uniformly scales the normalized contour about the bottom-right corner. Its percentage is the larger of the bottom and right reaches. A higher falloff concentrates the color closer to the corner; a lower value spreads it outward.
+- **Rendering:** choose Smooth or Ordered dither. Only parameters for the selected style are shown; switching styles retains their settings.
 - **Contour:** starting shape, curve interpretation, bottom reach, and right reach. Presets include Sketch, Round, Wide, Tall, and Diagonal. Manual shape edits are labeled Custom.
 - **Wave motion:** Animate toggles fluid motion. Amplitude (0–35%) sets deformation strength; Speed (0–1 Hz) sets the main wave frequency, with zero freezing the current pose. Wavelength (0.3–3 contour lengths) controls the spacing of the swell; Complexity (0–1) blends in smaller, overlapping ripples. Edge movement (0–1) controls how much A and D slide; zero pins both endpoints. Motion starts enabled unless the browser requests reduced motion. Disabling Animate restores the base contour.
-- **Finish:** smooth or linear blending, and optional fine-grain or ordered 4 × 4 dithering. Dithering is limited to the gradient; it never adds noise to the black field or changes the exact corner color.
+- **Finish:** smooth or linear blending for all styles. Smooth rendering also offers subtle fine-grain or ordered 4 × 4 dithering to reduce banding. The larger square-dot Ordered dither style is selected in Rendering.
 - **Middle anchors:** numeric controls for B and C, useful when the gradient is too small to drag individual points comfortably.
 - **Canvas & export:** 4K UHD, 1080p, square, portrait, or custom dimensions. Width and height each accept 64–4096 pixels. The default output is 3840 × 2160.
+
+## Rendering styles
+
+All styles use the editable contour, corner color, falloff, and wave animation. The area outside the contour stays opaque black, and the bottom-right pixel retains the exact selected color. Spacing is a percentage of the canvas's shorter side, so the pattern layout stays consistent across preview and PNG resolutions.
+
+**Smooth** preserves the original continuous gradient.
+
+**Ordered dither** draws a regular grid of square dots. A repeating Bayer threshold matrix distributes the available tones across neighboring dots.
+
+- **Spacing % (0.5–6):** distance between dot centers, relative to the shorter canvas side.
+- **Dot size % (10–100):** square width as a percentage of the spacing; smaller values leave wider black gaps.
+- **Tone levels (2–16):** number of brightness levels, including black and the selected corner color. Two levels produce a binary pattern; higher values give a more gradual fade.
+- **Contrast (0.25–3):** shapes dot brightness. Higher values darken the midtones; lower values spread brightness outward.
+
+Pattern edges are antialiased at the render resolution. Very fine dots may look softer in the reduced-size preview than in a full-resolution export.
 
 ## Export and persistence
 
 **Export PNG** captures the currently displayed wave pose as a still image and renders the gradient at the selected output resolution, rather than enlarging a screenshot of the preview. It excludes the curve, points, labels, border, and all UI. The background is opaque black. Export uses a frozen copy of the settings, so changing the editor while an export runs does not change the in-progress output.
 
-**Save setup** writes a small JSON file containing the base contour, wave parameters, and rendering settings (the playback phase is not saved). Older setups load with animation disabled. **Load setup** validates and restores that file. Unrecognized formats, invalid colors, invalid dimensions, non-finite coordinates, crossed anchors, and unanchored endpoints are rejected before the current setup is changed.
+**Save setup** writes a small JSON file containing the base contour, wave parameters, rendering style, and all pattern settings (the playback phase is not saved). Setups without rendering-style fields retain the original smooth appearance, and setups without wave fields load with animation disabled. **Load setup** validates and restores that file. Unrecognized formats, invalid colors or pattern parameters, invalid dimensions, non-finite coordinates, crossed anchors, and unanchored endpoints are rejected before the current setup is changed.
 
 The most recent setup is also saved to browser local storage when available. Use Save setup for a portable copy across browsers or sites. This app makes no application-data uploads or external requests.
 
@@ -61,9 +77,11 @@ For each ray from the corner, the engine finds its intersection with the contour
 
 A 4096-interval radial lookup table accelerates the per-pixel work. Its direction coordinate is `sqrt(y) / (sqrt(x) + sqrt(y))`, which places more samples near the axes and improves accuracy around nearly tangential curve endpoints. An 8192-interval transfer table handles the blend profile and falloff. The preview is resolution-capped for responsiveness; PNG exports are evaluated directly at their requested resolution, in chunks that yield to the UI.
 
+Ordered rendering samples the field once per dot and quantizes it with a 4 × 4 Bayer threshold matrix. Pixel-footprint filtering softens subpixel dot edges. The pattern is anchored at the bottom-right corner; its fade follows the animated contour. Preview and chunked exports use the same renderer and frozen settings.
+
 ## Source files
 
-`index.html` provides the Vite entry page. `src/styles.css` contains the responsive layout and dat.gui theme. `src/engine.js` exports geometry and rendering as an ES module. `src/main.js` imports the engine, stylesheet, and npm-installed dat.gui, and owns interaction, state/history, and exports.
+`index.html` provides the Vite entry page. `src/styles.css` contains the responsive layout and dat.gui theme. `src/engine.js` exports geometry and rendering as an ES module. `src/render-settings.js` defines rendering defaults, parameter ranges, and setup validation. `src/main.js` imports the engine, stylesheet, and npm-installed dat.gui, and owns interaction, state/history, and exports.
 
 ## Verification
 

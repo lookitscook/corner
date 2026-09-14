@@ -1,4 +1,5 @@
 /* Corner Gradient — dependency-free contour geometry and Canvas 2D renderer. */
+import { readRenderSettings } from './render-settings.js';
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const copyPoints = points => points.map(p => ({ x: p.x, y: p.y }));
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
@@ -126,8 +127,43 @@ function colorRGB(hex) {
 
 function prepare(points, settings) {
   const curves = segments(points, settings.mode);
+  const pattern = readRenderSettings(settings);
   return { curves, radial: radialLUT(curves), transfer: transferLUT(settings),
-    rgb: colorRGB(settings.color), points: copyPoints(points), dither: settings.dither };
+    rgb: colorRGB(settings.color), points: copyPoints(points), dither: settings.dither,
+    pattern };
+}
+
+function intensityAt(x, y, model) {
+  const { radial, transfer } = model;
+  const n = radial.length - 1, m = transfer.length - 1;
+  const radius = x + y;
+  const q = radius ? Math.sqrt(y) / (Math.sqrt(x) + Math.sqrt(y)) * n : 0;
+  const a = Math.min(n - 1, Math.floor(q)), f = q - a;
+  const boundary = radial[a] * (1 - f) + radial[a + 1] * f;
+  const t = clamp(1 - radius / Math.max(boundary, 1e-12), 0, 1) * m;
+  const b = Math.min(m - 1, Math.floor(t));
+  return transfer[b] * (1 - (t - b)) + transfer[b + 1] * (t - b);
+}
+
+// Exact box-filter coverage of a periodic stripe, including subpixel lines.
+// Coordinates are in cells, with a stripe centered on each integer.
+function stripeCoverage(position, thickness, footprint) {
+  const integral = t => {
+    const shifted = t + thickness / 2, whole = Math.floor(shifted);
+    return whole * thickness + Math.min(shifted - whole, thickness);
+  };
+  return clamp((integral(position + footprint / 2) - integral(position - footprint / 2)) / footprint, 0, 1);
+}
+
+function orderedIntensity(plan, col, py) {
+  const { model, cellPixels, orderedTones, toneColumns } = plan;
+  const dx = plan.width - 1 - plan.startX - col, dy = plan.height - 1 - py;
+  if (!dx && !dy) return 1; // Preserve the exact chosen corner color.
+  const u = dx / cellPixels, v = dy / cellPixels;
+  const cx = Math.round(u), cy = Math.round(v);
+  const footprint = 1 / cellPixels, size = model.pattern.orderedDotSize / 100;
+  const coverage = stripeCoverage(u, size, footprint) * stripeCoverage(v, size, footprint);
+  return orderedTones[cy * toneColumns + cx] * coverage;
 }
 
 function renderPlan(ctx, width, height, model) {
@@ -142,7 +178,22 @@ function renderPlan(ctx, width, height, model) {
     xs[x] = (width - 1 - startX - x) / (width - 1);
     roots[x] = Math.sqrt(xs[x]);
   }
-  return { ctx, width, height, startX, startY, rw, rh, xs, roots, model };
+  const shortSide = Math.min(width - 1, height - 1), p = model.pattern;
+  const cellPixels = shortSide * p.orderedSpacing / 100;
+  const plan = { ctx, width, height, startX, startY, rw, rh, xs, roots, model, cellPixels };
+  if (p.renderStyle === 'Ordered dither') {
+    // Sample once per square so each dot has one consistent, ordered tone.
+    const toneColumns = Math.ceil((rw - 1) / cellPixels) + 1;
+    const toneRows = Math.ceil((rh - 1) / cellPixels) + 1;
+    const tones = new Float32Array(toneColumns * toneRows), levels = p.orderedLevels - 1;
+    for (let y = 0; y < toneRows; y++) for (let x = 0; x < toneColumns; x++) {
+      const value = Math.pow(intensityAt(x * cellPixels / (width - 1), y * cellPixels / (height - 1), model), p.orderedContrast);
+      const threshold = (BAYER[(y & 3) * 4 + (x & 3)] + .5) / 16;
+      tones[y * toneColumns + x] = Math.floor(value * levels + threshold) / levels;
+    }
+    plan.orderedTones = tones; plan.toneColumns = toneColumns;
+  }
+  return plan;
 }
 
 function drawRows(plan, firstRow, rows) {
@@ -163,7 +214,12 @@ function drawRows(plan, firstRow, rows) {
       const t = 1 - radius / Math.max(boundary, 1e-12);
       if (t <= 0) continue; // Exact black outside the contour; never dither it.
       const ti = clamp(t * m, 0, m), b = Math.min(m - 1, Math.floor(ti)), tf = ti - b;
-      const intensity = transfer[b] * (1 - tf) + transfer[b + 1] * tf;
+      let intensity = transfer[b] * (1 - tf) + transfer[b + 1] * tf;
+      if (model.pattern.renderStyle === 'Ordered dither') {
+        intensity = orderedIntensity(plan, col, py);
+        for (let c = 0; c < 3; c++) pixels[offset + c] = Math.round(rgb[c] * intensity);
+        continue;
+      }
       let noise = 0;
       if (dither === 'Fine grain') {
         let hash = Math.imul((startX + col) + Math.imul(py, width), 0x45d9f3b);
