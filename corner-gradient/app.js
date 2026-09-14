@@ -1,7 +1,11 @@
-/* Corner Gradient Studio. No framework or build step required. */
+/* Corner Gradient Studio — Vite entry point. */
+import { GUI } from 'dat.gui';
+import E from './engine.js';
+
+// Preserve the renderer API for integrations and browser verification.
+window.CornerEngine = E;
 (function () {
   'use strict';
-  const E = window.CornerEngine;
   const $ = id => document.getElementById(id);
   const STORAGE_KEY = 'corner-gradient-studio.v1';
   const FORMATS = { '4K UHD': [3840, 2160], '1080p': [1920, 1080],
@@ -149,12 +153,12 @@
     c.domElement.querySelectorAll('input,select').forEach(input => input.setAttribute('aria-label', name));
     controllers.push(c); return c;
   }
-  function buildGUI(useDat) {
+  function buildGUI() {
     const openness = Object.fromEntries(Object.entries(folderMap).map(([name, f]) =>
-      [name, f.details ? f.details.open : !f.closed]));
+      [name, !f.closed]));
     if (gui) gui.destroy();
     $('gui-host').replaceChildren(); controllers = []; folderMap = {};
-    gui = useDat ? new dat.GUI({ autoPlace: false, hideable: false, width: 286 }) : new NativeGUI();
+    gui = new GUI({ autoPlace: false, hideable: false, width: 286 });
     $('gui-host').append(gui.domElement);
     function folder(name, open = false) {
       const f = gui.addFolder(name); folderMap[name] = f;
@@ -204,35 +208,11 @@
       settings[key] = Math.round(E.clamp(Number(value) || 64, 64, 4096)); fitArtboard(); changed();
     });
     // Give the original dat.gui folder titles keyboard support as well.
-    if (useDat) gui.domElement.querySelectorAll('li.title').forEach(title => {
+    gui.domElement.querySelectorAll('li.title').forEach(title => {
       title.tabIndex = 0; title.setAttribute('role', 'button');
       title.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); title.click(); } });
     });
-    $('library-badge').textContent = useDat ? 'dat.gui' : 'native controls';
     refreshControls();
-  }
-
-  // Real dat.gui is the normal options panel. A native panel remains usable when
-  // both CDNs are blocked or unavailable; it is explicitly labeled as a fallback.
-  function loadDatGUI() {
-    if (window.dat && window.dat.GUI) { buildGUI(true); $('library-note').textContent = ''; return; }
-    buildGUI(false);
-    $('library-note').textContent = 'Loading dat.gui… Native controls are ready to use.';
-    const sources = [
-      'https://cdn.jsdelivr.net/npm/dat.gui@0.7.9/build/dat.gui.min.js',
-      'https://unpkg.com/dat.gui@0.7.9/build/dat.gui.min.js'
-    ];
-    let next = 0;
-    const loadNext = () => {
-      if (next >= sources.length) { $('library-note').textContent = 'dat.gui could not load. Native controls are active; the editor and exports still work.'; return; }
-      const script = document.createElement('script'); script.src = sources[next++]; script.async = true;
-      script.onload = () => {
-        if (window.dat && window.dat.GUI) { buildGUI(true); $('library-note').textContent = ''; }
-        else loadNext();
-      };
-      script.onerror = loadNext; document.head.append(script);
-    };
-    loadNext();
   }
 
   const anchorElements = [];
@@ -436,7 +416,7 @@
   } catch (_) { storageAvailable = false; }
   if (!storageAvailable) $('save-status-text').textContent = 'Use Save setup to keep your work';
   syncDerived(); history = [snapshot()]; updateHistoryButtons();
-  loadDatGUI(); fitArtboard();
+  buildGUI(); fitArtboard();
   if (window.ResizeObserver) new ResizeObserver(fitArtboard).observe($('stage-shell'));
   window.addEventListener('resize', fitArtboard);
   document.addEventListener('visibilitychange', () => { lastFrameTime = null; if (!document.hidden) schedule(); });

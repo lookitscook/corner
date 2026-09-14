@@ -72,14 +72,11 @@
         <div class="setup-actions"><button id="save-setup" class="btn quiet"><svg class="icon"><use href="#i-save"/></svg>Save setup</button><button id="load-setup" class="btn quiet"><svg class="icon"><use href="#i-folder"/></svg>Load setup</button></div>
         <input type="file" id="setup-file" accept=".json,application/json" hidden>
         <div class="save-status"><span class="dot"></span><span id="save-status-text">Settings stay on this device</span></div>
-        <p id="library-note"></p>
       </div>
     </aside>
   </main>
   <div id="toast" role="status" aria-live="polite"></div>
   <noscript><p style="padding:24px">Enable JavaScript to edit and export a corner gradient.</p></noscript>
-  <script src="engine.js"></script>
-  <script src="fallback-gui.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

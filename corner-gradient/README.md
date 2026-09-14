@@ -4,11 +4,9 @@ A small browser-based editor for a black canvas with a configurable bottom-right
 
 ## Run
 
-Open `corner-gradient.html` in a browser. It is the single-file build and needs no installation or build step. The split source version is `index.html` with `styles.css`, `engine.js`, `fallback-gui.js`, and `app.js`; those files can also be placed on any static web host.
+From the repository root, run `npm ci` and `npm run dev`. Build with `npm run build`, then serve the generated `dist/` folder from a static host. `npm run build:standalone` generates a portable `corner-gradient.html` file that opens directly in a browser.
 
-The normal inspector uses **actual dat.gui 0.7.9**, loaded from a pinned jsDelivr URL, with unpkg as the second source. If those sources are blocked or the browser is offline, a separately implemented native-input inspector remains available and is explicitly labeled **native controls**. The editor, dragging, PNG output, and JSON import/export do not depend on the CDN being available. The fallback is not presented as dat.gui.
-
-Opening an HTML attachment inside a document previewer may show the source or a static preview rather than execute it. Open it in a browser to use the editor. On a phone, serving the source folder from a static website is generally more convenient than opening a local HTML attachment.
+The inspector uses dat.gui 0.7.9, installed through npm and bundled locally by Vite. No CDN, Python, backend, or CMS is required. See the [project README](../README.md) for setup and verification commands.
 
 ## Editing
 
@@ -35,7 +33,7 @@ Click the contour to select it and show its anchors. Click the empty canvas to d
 
 **Save setup** writes a small JSON file containing the base contour, wave parameters, and rendering settings (the playback phase is not saved). Older setups load with animation disabled. **Load setup** validates and restores that file. Unrecognized formats, invalid colors, invalid dimensions, non-finite coordinates, crossed anchors, and unanchored endpoints are rejected before the current setup is changed.
 
-The most recent setup is also saved to browser local storage when available. Local-file storage behavior depends on the browser; use Save setup for a portable copy. This app makes no application-data uploads. Its only external requests are for the dat.gui script.
+The most recent setup is also saved to browser local storage when available. Local-file storage behavior depends on the browser; use Save setup for a portable copy. This app makes no application-data uploads or external requests.
 
 ## Keyboard
 
@@ -65,36 +63,12 @@ A 4096-interval radial lookup table accelerates the per-pixel work. Its directio
 
 ## Source files
 
-`index.html` provides the page structure. `styles.css` contains the responsive layout and dat.gui theme. `engine.js` implements geometry and rendering. `app.js` owns interaction, dat.gui setup, state/history, and exports. `fallback-gui.js` provides the explicitly labeled offline controls. `build_standalone.py` inlines the first-party assets into one HTML file.
-
-Rebuild the standalone file with:
-
-```sh
-python build_standalone.py
-```
-
-The result is written to `../corner-gradient.html` relative to this source folder.
+`index.html` provides the Vite entry page. `styles.css` contains the responsive layout and dat.gui theme. `engine.js` exports geometry and rendering as an ES module. `app.js` imports the engine and npm-installed dat.gui, and owns interaction, state/history, and exports. `../scripts/build-standalone.js` inlines the Vite output into a portable HTML file using Node.js.
 
 ## Verification
 
-```sh
-node tests/engine.test.js
-python tests/browser.test.py
-```
-
-The browser tests need Playwright and Pillow. Set the `CHROMIUM` environment variable to a Chromium executable if it is not at `/usr/bin/chromium`. They inject the standalone HTML directly and intentionally block external requests to test the native fallback path.
-
-Verified here: 320 randomized geometry cases, 160 wave cases covering ordering, bounds, continuity, inverse editing, and base-shape preservation, interpolation at all four anchors, continuous joins, monotonicity, radial lookup accuracy, 21 Chromium editor checks, endpoint constraints, both middle-point drags, undo/redo, proportional size changes, both curve modes, keyboard movement, real touch event dispatch in a mobile-sized viewport, JSON validation/round-trip, and a 3840 × 2160 PNG with exact black and corner-color pixels and no editing guides. Wave playback, zero-speed freezing, animated handle dragging, legacy setup compatibility, and pixel-exact frozen-frame PNG export also passed. The browser tests passed without application JavaScript errors.
-
-**Test limitations:** the CDN-loaded dat.gui panel could not be exercised in this network-restricted environment. It is wired against the official dat.gui API; the fully exercised controls were the native fallback. Mobile testing used Chromium device emulation, not a physical iPhone or Safari. Browser local-storage persistence could not be exercised in the originless test page, so JSON files are the verified portable persistence path.
+Run `npm test` from the repository root after installing Playwright Chromium (see the [project README](../README.md)). The engine suite checks randomized geometry and wave invariants. The JavaScript Playwright suite tests the production build with external requests blocked, exercising the real bundled dat.gui controls, editing, animation, setup validation, local storage, PNG export, and emulated mobile touch. Mobile checks use Chromium emulation, not a physical device or Safari.
 
 ## Dependency references
 
-The only third-party runtime library is dat.gui, published by the Data Arts Team / Google Creative Lab under Apache License 2.0. Its source is loaded externally rather than copied into this package.
-
-```text
-Official source: https://github.com/dataarts/dat.gui
-Official API: https://github.com/dataarts/dat.gui/blob/master/API.md
-Pinned release: https://github.com/dataarts/dat.gui/tree/v0.7.9
-License: https://github.com/dataarts/dat.gui/blob/v0.7.9/LICENSE
-```
+The only third-party runtime library is [dat.gui](https://github.com/dataarts/dat.gui), published by the Data Arts Team / Google Creative Lab under [Apache License 2.0](https://github.com/dataarts/dat.gui/blob/v0.7.9/LICENSE). npm installs it and Vite includes it in the production bundle.

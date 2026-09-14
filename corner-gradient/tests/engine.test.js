@@ -1,6 +1,5 @@
-'use strict';
-const assert = require('node:assert/strict');
-const E = require('../engine.js');
+import assert from 'node:assert/strict';
+import E from '../engine.js';
 const approx = (a,b,t=1e-8) => assert(Math.abs(a-b) < t, `${a} != ${b}`);
 let seed=814721;
 function rand() { seed=(Math.imul(seed,1664525)+1013904223)>>>0; return seed/4294967296; }
