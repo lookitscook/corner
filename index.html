@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#111214">
-  <meta name="description" content="Shape a bottom-right corner gradient with four draggable anchors. Export a clean PNG at up to 4K resolution.">
+  <meta name="description" content="Shape a bottom-right corner gradient with four draggable anchors. Export a clean PNG or a seamlessly looping GIF or APNG.">
   <title>Corner — Gradient Studio</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2317191d'/%3E%3Cpath d='M8 24C20 24 24 20 24 8M8 27H27V8' fill='none' stroke='%23c8bcff' stroke-width='2'/%3E%3C/svg%3E">
 </head>
@@ -28,7 +28,8 @@
     </div>
     <div class="top-actions">
       <button id="reset" class="btn quiet" title="Reset everything (you can undo this)"><svg class="icon"><use href="#i-reset"/></svg><span class="label">Reset</span></button>
-      <button id="export" class="btn primary"><svg class="icon export-icon"><use href="#i-download"/></svg><span id="export-label">Export PNG</span></button>
+      <button id="cancel-export" class="btn quiet" hidden>Cancel</button>
+      <button id="export" class="btn primary" title="Choose PNG, GIF, or APNG in Canvas & export"><svg class="icon export-icon"><use href="#i-download"/></svg><span id="export-label">Export PNG</span></button>
     </div>
   </header>
   <main class="app">
@@ -65,6 +66,7 @@
     <aside class="inspector" aria-label="Gradient settings">
       <div class="inspector-intro"><div class="row"><h1>Shape the corner.</h1><span id="library-badge" class="library-badge">dat.gui</span></div><p>A little color. Exactly where you want it.</p></div>
       <div id="gui-host"></div>
+      <p id="export-note" class="curve-note" role="status" hidden></p>
       <p id="curve-note" class="curve-note">Through anchors: all four points sit on the contour. Their order is preserved to keep the fade smooth and free of loops.</p>
       <div class="anchor-info"><div class="anchor-info-top"><span id="anchor-title">CONTOUR SELECTED</span><span id="anchor-kind">4 anchors</span></div><div id="anchor-coordinates">Select a point to fine-tune its position.</div></div>
       <div class="inspector-bottom">

@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import { decodeGIF, decodeAPNG } from './helpers/animation-decode.js';
 
 const state = page => page.evaluate(() => CornerStudio.getState());
 const control = (page, key) => page.locator(`[data-control="${key}"] input`).last();
@@ -334,4 +336,109 @@ test('Ordered dither controls, history, setup persistence, and frozen PNG export
   await page.evaluate(s => CornerStudio.setState(s), legacy);
   expect((await state(page)).settings.renderStyle).toBe('Smooth');
   await expect(page.locator('[data-control="orderedSpacing"]')).not.toBeVisible();
+});
+
+for (const format of ['GIF', 'APNG']) {
+  test(`${format} exports a real repeating animation from frozen settings`, async ({ page }, testInfo) => {
+    await page.evaluate(format => {
+      const s = CornerStudio.getState();
+      Object.assign(s.settings, { color: '#7088a0', waveEnabled: true, waveSpeed: .5, waveAmplitude: 25,
+        renderStyle: format === 'APNG' ? 'Ordered dither' : 'Smooth', orderedSizeFade: 100 });
+      CornerStudio.setState(s);
+    }, format);
+    await page.getByRole('button', { name: /Canvas & export/ }).click();
+    await page.locator('[data-control="exportFormat"] select').selectOption(format);
+    await setNumber(page, 'loopDuration', 2);
+    await setNumber(page, 'loopMaxEdge', 128);
+    await page.locator('[data-control="loopFPS"] select').selectOption('10');
+    await expect(page.locator('#export-label')).toHaveText(`Export ${format}`);
+    await expect(page.locator('#export-note')).toContainText('128 × 72 before cropping · 20 frames');
+    await page.screenshot({ path: testInfo.outputPath('animation-controls.png'), fullPage: true });
+    const saved = await state(page);
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('corner-gradient-studio.v1')))).toEqual(saved);
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.CornerStudio));
+    expect(await state(page)).toEqual(saved);
+    await captureBlobs(page);
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const expected = await page.evaluate(() => {
+      const s = CornerStudio.getState().settings, c = document.createElement('canvas');
+      c.width = 128; c.height = 72;
+      CornerEngine.render(c.getContext('2d'), c.width, c.height, CornerEngine.prepare(CornerStudio.getAnimatedPoints(), s));
+      const expected = Array.from(c.getContext('2d').getImageData(0, 0, c.width, c.height).data);
+      document.querySelector('#export').click();
+      const changed = CornerStudio.getState(); changed.settings.color = '#ff0000'; changed.settings.waveAmplitude = 0;
+      CornerStudio.setState(changed);
+      return expected;
+    });
+    await page.waitForFunction(() => window.__lastBlob && !document.querySelector('#export').disabled);
+    expect(await page.evaluate(() => window.__lastBlob.type)).toBe(format === 'GIF' ? 'image/gif' : 'image/apng');
+    await expect(page.locator('#cancel-export')).not.toBeVisible();
+    const base64 = await page.evaluate(() => new Promise(resolve => {
+      const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(',')[1]); reader.readAsDataURL(window.__lastBlob);
+    }));
+    const bytes = Buffer.from(base64, 'base64');
+    await writeFile(testInfo.outputPath(`loop.${format.toLowerCase()}`), bytes);
+    const decoded = format === 'GIF' ? decodeGIF(bytes) : decodeAPNG(bytes);
+    expect([decoded.frames.length, decoded.plays]).toEqual([20, 0]);
+    expect(decoded.width).toBeLessThan(128);
+    expect(decoded.height).toBeLessThan(72);
+    const cropX = 128 - decoded.width, cropY = 72 - decoded.height, expectedCrop = [];
+    for (let y = 0; y < 72; y++) for (let x = 0; x < 128; x++) {
+      const pixel = expected.slice((y * 128 + x) * 4, (y * 128 + x + 1) * 4);
+      if (x >= cropX && y >= cropY) expectedCrop.push(...pixel);
+      else assert.deepEqual(pixel, [0, 0, 0, 255], 'The crop must only remove unused black canvas');
+    }
+    await expect(page.locator('#toast')).toContainText(`${decoded.width} × ${decoded.height}`);
+    same(decoded.frames.reduce((sum, f) => sum + f.delay, 0), 2);
+    const first = decoded.frames[0].rgba;
+    if (format === 'APNG') expect(Array.from(first)).toEqual(expectedCrop);
+    else first.forEach((v, i) => assert(Math.abs(v - expectedCrop[i]) <= 1));
+    expect(decoded.frames[10].rgba).not.toEqual(first);
+    expect(decoded.frames.at(-1).rgba).not.toEqual(first);
+    const distance = (a, b) => a.reduce((sum, v, i) => sum + Math.abs(v - b[i]), 0);
+    const differences = decoded.frames.slice(1).map((f, i) => distance(f.rgba, decoded.frames[i].rgba));
+    expect(distance(first, decoded.frames.at(-1).rgba)).toBeLessThanOrEqual(Math.max(...differences) * 1.25);
+    for (const frame of decoded.frames) {
+      expect(Array.from(frame.rgba.slice(0, 4))).toEqual([0, 0, 0, 255]);
+      expect(Array.from(frame.rgba.slice(-4))).toEqual([112, 136, 160, 255]);
+    }
+    // Confirm the browser can also load the exported image.
+    expect(await page.evaluate(async () => {
+      const img = new Image(), url = URL.createObjectURL(window.__lastBlob);
+      try { img.src = url; await img.decode(); return [img.naturalWidth, img.naturalHeight]; }
+      finally { URL.revokeObjectURL(url); }
+    })).toEqual([decoded.width, decoded.height]);
+    const legacy = structuredClone(saved);
+    for (const key of ['exportFormat', 'loopDuration', 'loopFPS', 'loopMaxEdge']) delete legacy.settings[key];
+    await page.evaluate(s => CornerStudio.setState(s), legacy);
+    expect((await state(page)).settings.exportFormat).toBe('PNG');
+    await expect(page.locator('#export-label')).toHaveText('Export PNG');
+  });
+}
+
+test('animated export can be cancelled and rejects oversized jobs without blocking the editor', async ({ page }) => {
+  await captureBlobs(page);
+  await page.evaluate(() => {
+    const s = CornerStudio.getState(); Object.assign(s.settings, { exportFormat: 'GIF', loopMaxEdge: 1280 });
+    CornerStudio.setState(s);
+    document.querySelector('#export').click();
+    document.querySelector('#cancel-export').click();
+  });
+  await expect(page.locator('#toast')).toHaveText('Export cancelled.');
+  await expect(page.locator('#export')).toBeEnabled();
+  await expect(page.locator('#cancel-export')).not.toBeVisible();
+  await expect(page.locator('#reset')).toBeVisible();
+  expect(await page.evaluate(() => Boolean(window.__lastBlob))).toBe(false);
+  await page.evaluate(() => {
+    const s = CornerStudio.getState(); Object.assign(s.settings, { loopMaxEdge: 1920, loopDuration: 20, loopFPS: 30 });
+    CornerStudio.setState(s); document.querySelector('#export').click();
+  });
+  await expect(page.locator('#toast')).toContainText('too large');
+  await expect(page.locator('#export')).toBeEnabled();
+  await page.evaluate(() => {
+    const s = CornerStudio.getState(); Object.assign(s.settings, { loopMaxEdge: 128, loopDuration: 1, loopFPS: 10 });
+    CornerStudio.setState(s); document.querySelector('#export').click();
+  });
+  await page.waitForFunction(() => window.__lastBlob?.type === 'image/gif' && !document.querySelector('#export').disabled);
 });

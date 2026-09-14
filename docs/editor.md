@@ -26,7 +26,7 @@ Click the contour to select it and show its anchors. Click the empty canvas to d
 - **Wave motion:** Animate toggles fluid motion. Amplitude (0–35%) sets deformation strength; Speed (0–1 Hz) sets the main wave frequency, with zero freezing the current pose. Wavelength (0.3–3 contour lengths) controls the spacing of the swell; Complexity (0–1) blends in smaller, overlapping ripples. Edge movement (0–1) controls how much A and D slide; zero pins both endpoints. Motion starts enabled unless the browser requests reduced motion. Disabling Animate restores the base contour.
 - **Finish:** smooth or linear blending for all styles. Smooth rendering also offers subtle fine-grain or ordered 4 × 4 dithering to reduce banding. The larger square-dot Ordered dither style is selected in Rendering.
 - **Middle anchors:** numeric controls for B and C, useful when the gradient is too small to drag individual points comfortably.
-- **Canvas & export:** 4K UHD, 1080p, square, portrait, or custom dimensions. Width and height each accept 64–4096 pixels. The default output is 3840 × 2160.
+- **Canvas & export:** choose PNG, GIF, or APNG under **File type**. Canvas presets include 4K UHD, 1080p, square, portrait, and custom dimensions. Width and height each accept 64–4096 pixels. GIF and APNG expose loop duration, frame rate, and maximum export edge controls.
 
 ## Rendering styles
 
@@ -48,7 +48,19 @@ Pattern edges are antialiased at the render resolution. Very fine dots may look 
 
 **Export PNG** captures the currently displayed wave pose as a still image and renders the gradient at the selected output resolution, rather than enlarging a screenshot of the preview. It excludes the curve, points, labels, border, and all UI. The background is opaque black. Export uses a frozen copy of the settings, so changing the editor while an export runs does not change the in-progress output.
 
-**Save setup** writes a small JSON file containing the base contour, wave parameters, rendering style, and all pattern settings (the playback phase is not saved). Setups without rendering-style fields retain the original smooth appearance, and setups without wave fields load with animation disabled. **Load setup** validates and restores that file. Unrecognized formats, invalid colors or pattern parameters, invalid dimensions, non-finite coordinates, crossed anchors, and unanchored endpoints are rejected before the current setup is changed.
+To export an animation, open **Canvas & export**, select **GIF** or **APNG** as the file type, and click the top **Export GIF/APNG** button. Both formats repeat forever and include only the rendered gradient, with an opaque black background. Animated exports automatically crop away the unused black canvas above and to the left of the corner. One fixed crop contains the gradient's full extent across every frame, so the loop never shifts or clips as it moves. Cropping preserves the original pixels and dot spacing; PNG stills keep the full canvas.
+
+- **Loop seconds:** 1–20 seconds, default 6.
+- **Frame rate:** 10, 15, 20, 24, 25, or 30 frames per second, default 20.
+- **Max edge px:** 128–1920 pixels, default 960. The canvas is scaled proportionally to fit this limit, then cropped; the resulting animation can have a different aspect ratio. It never enlarges the canvas. The filename and completion message show the final cropped dimensions. PNG output still uses the full canvas dimensions.
+
+The loop starts at the current wave pose. Each wave component is fitted to a whole number of cycles within the chosen duration, keeping both the pose and motion continuous at the join. The endpoint frame is not duplicated. The exported motion can differ from live playback because its frequencies are adjusted to close the loop. Zero speed freezes the current pose; disabling Animate or setting amplitude to zero produces a static export.
+
+GIF uses a fixed 256-color palette spanning black to the selected corner color. APNG preserves the renderer's exact pixel colors. Ordered dither and Size fade work in both formats. GIF frame delays are rounded to centiseconds while preserving the total loop duration.
+
+Animated encoding runs locally in a worker and processes one frame at a time. The top button shows progress; **Cancel** stops the export. Preview playback pauses during export, and editing the setup does not change the file being generated. Jobs are limited to 240 million pixels across all frames and a 96 MB encoded file; lower the size, duration, or frame rate if a limit is reached.
+
+**Save setup** writes a small JSON file containing the base contour, wave parameters, rendering style, pattern settings, and export options (the playback phase is not saved). Setups without export options default to PNG. Setups without rendering-style fields retain the original smooth appearance, and setups without wave fields load with animation disabled. **Load setup** validates and restores that file. Unrecognized formats, invalid colors or pattern parameters, invalid dimensions, non-finite coordinates, crossed anchors, and unanchored endpoints are rejected before the current setup is changed.
 
 The most recent setup is also saved to browser local storage when available. Use Save setup for a portable copy across browsers or sites. This app makes no application-data uploads or external requests.
 
@@ -90,4 +102,4 @@ Run `npm test` from the repository root after installing Playwright Chromium (se
 
 ## Dependency references
 
-The only third-party runtime library is [dat.gui](https://github.com/dataarts/dat.gui), published by the Data Arts Team / Google Creative Lab under [Apache License 2.0](https://github.com/dataarts/dat.gui/blob/v0.7.9/LICENSE). npm installs it and Vite includes it in the production bundle.
+The inspector uses [dat.gui](https://github.com/dataarts/dat.gui), published by the Data Arts Team / Google Creative Lab under [Apache License 2.0](https://github.com/dataarts/dat.gui/blob/v0.7.9/LICENSE). GIF encoding uses [gifenc](https://github.com/mattdesl/gifenc), and APNG compression uses [fflate](https://github.com/101arrowz/fflate), both under the MIT license. npm installs these libraries, Vite bundles them locally, and their license files are included in `public/`. Animated export requires a browser with module workers and OffscreenCanvas support.

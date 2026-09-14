@@ -1,6 +1,6 @@
 # Corner — Gradient Studio
 
-A JavaScript canvas editor with smooth and ordered-dither gradient styles, built with Vite and npm. dat.gui is bundled locally; the app needs no CDN, backend, or CMS.
+A JavaScript canvas editor with smooth and ordered-dither gradient styles, built with Vite and npm. Export a PNG still or a seamlessly looping GIF/APNG, automatically cropped to the corner's full animated extent. All libraries are bundled locally; the app needs no CDN, backend, or CMS.
 
 ## Development
 
@@ -29,7 +29,7 @@ npx playwright install chromium
 npm test
 ```
 
-`npm run test:unit` runs the geometry checks. `npm run test:browser` builds and tests the production site, covering controls, animation, dragging, keyboard input, persistence, setup files, PNG exports, and mobile touch. Alternatively, set `CHROMIUM` to an existing Chrome/Chromium executable.
+`npm run test:unit` checks geometry, rendering, loop continuity, and animation encoding. `npm run test:browser` builds and tests the production site, covering controls, animation, dragging, keyboard input, persistence, setup files, PNG and animated exports, cancellation, and mobile touch. Alternatively, set `CHROMIUM` to an existing Chrome/Chromium executable.
 
 ## GitHub Pages
 
@@ -53,6 +53,8 @@ index.html              Vite entry page
 src/main.js             Editor UI, state, and exports
 src/engine.js           Geometry and Canvas 2D rendering
 src/render-settings.js Rendering parameters and validation
+src/export-settings.js Export parameters and size limits
+src/animation-*.js     Worker, encoders, and export lifecycle
 src/styles.css          Layout and control styling
 public/                 Static assets and third-party license
 tests/                 Geometry and Playwright browser tests

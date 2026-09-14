@@ -2,6 +2,8 @@
 import { GUI } from 'dat.gui';
 import E from './engine.js';
 import { RENDER_DEFAULTS, RENDER_RANGES, RENDER_STYLES, readRenderSettings } from './render-settings.js';
+import { EXPORT_DEFAULTS, EXPORT_FORMATS, EXPORT_RANGES, LOOP_FPS, readExportSettings, animationPlan } from './export-settings.js';
+import { startAnimationExport } from './animation-export.js';
 import './styles.css';
 
 // Preserve the renderer API for integrations and browser verification.
@@ -23,7 +25,7 @@ window.CornerEngine = E;
     waveLength: 1.4, waveComplexity: .4, waveEdges: .35 };
   const WAVE_RANGES = { waveAmplitude: [0, 35, .5], waveSpeed: [0, 1, .01],
     waveLength: [.3, 3, .05], waveComplexity: [0, 1, .05], waveEdges: [0, 1, .05] };
-  const DEFAULT_SETTINGS = { ...WAVE_DEFAULTS, ...RENDER_DEFAULTS, color: '#606060', size: 40, falloff: 1,
+  const DEFAULT_SETTINGS = { ...WAVE_DEFAULTS, ...RENDER_DEFAULTS, ...EXPORT_DEFAULTS, color: '#606060', size: 40, falloff: 1,
     blend: 'Smooth', dither: 'Fine grain', mode: 'Through anchors',
     preset: 'Sketch', width: 3840, height: 2160, format: '4K UHD',
     bottom: 40, right: 40, bx: 24.4, by: 4.2, cx: 10, cy: 15.4 };
@@ -36,6 +38,7 @@ window.CornerEngine = E;
   let toastTimer, saveTimer, busy = false, history = [], historyIndex = 0;
   let lastColor = settings.color, storageAvailable = true;
   let wavePhase = 0, lastFrameTime = null;
+  let cancelExport = null;
   let displayPoints = E.copyPoints(points);
   const canvas = $('gradient'), overlay = $('overlay'), wrap = $('artboard-wrap');
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -55,7 +58,7 @@ window.CornerEngine = E;
   }
   function stateObject() {
     const keys = ['color', 'falloff', 'blend', 'dither', 'mode', 'preset', 'width', 'height',
-      ...Object.keys(WAVE_DEFAULTS), ...Object.keys(RENDER_DEFAULTS)];
+      ...Object.keys(WAVE_DEFAULTS), ...Object.keys(RENDER_DEFAULTS), ...Object.keys(EXPORT_DEFAULTS)];
     return { format: 'corner-gradient', version: 1,
       settings: Object.fromEntries(keys.map(k => [k, settings[k]])), points: E.copyPoints(points) };
   }
@@ -79,7 +82,7 @@ window.CornerEngine = E;
       throw new Error('The endpoints must be on the bottom and right edges, away from the corner.');
     for (let i = 1; i < 4; i++) if (p[i].x >= p[i - 1].x || p[i].y <= p[i - 1].y)
       throw new Error('The anchors must stay ordered from the bottom edge to the right edge.');
-    const clean = readRenderSettings(s);
+    const clean = { ...readRenderSettings(s), ...readExportSettings(s) };
     for (const k of ['color', 'falloff', 'blend', 'dither', 'mode', 'preset', 'width', 'height']) clean[k] = s[k];
     for (const [key, fallback] of Object.entries(WAVE_DEFAULTS)) {
       // Older version-1 setups retain their original static appearance.
@@ -109,7 +112,20 @@ window.CornerEngine = E;
       const row = c.domElement.closest('li') || c.domElement;
       const style = row.dataset.renderStyle;
       if (style) row.style.display = style === settings.renderStyle ? '' : 'none';
+      if (row.dataset.animationExport) row.style.display = settings.exportFormat === 'PNG' ? 'none' : '';
     });
+    updateExportInfo();
+  }
+  function updateExportInfo() {
+    if (!busy) $('export-label').textContent = `Export ${settings.exportFormat}`;
+    $('export-note').hidden = settings.exportFormat === 'PNG';
+    if (settings.exportFormat === 'PNG') return;
+    try {
+      const plan = animationPlan(settings);
+      const moving = settings.waveEnabled && settings.waveAmplitude > 0 && settings.waveSpeed > 0;
+      $('export-note').textContent = `${plan.width} × ${plan.height} before cropping · ${plan.frames} frames · ${plan.seconds}s loop. Automatically cropped to the corner across the whole loop. ` +
+        (moving ? 'Wave motion is fitted to whole cycles for a seamless loop.' : 'Enable Animate and set amplitude and speed above zero for motion.');
+    } catch (error) { $('export-note').textContent = error.message; }
   }
   function updateHistoryButtons() { $('undo').disabled = historyIndex <= 0; $('redo').disabled = historyIndex >= history.length - 1; }
   function commit() {
@@ -227,12 +243,22 @@ window.CornerEngine = E;
     addControl(middle, 'cx', 'C · left %', [0, 100, .1], value => moveAnchor(2, Number(value) / 100, points[2].y));
     addControl(middle, 'cy', 'C · up %', [0, 100, .1], value => moveAnchor(2, points[2].x, Number(value) / 100));
     const output = folder('Canvas & export');
+    addControl(output, 'exportFormat', 'File type', [EXPORT_FORMATS], () => changed());
     addControl(output, 'format', 'Format', [Object.keys(FORMATS)], value => {
       if (FORMATS[value]) { [settings.width, settings.height] = FORMATS[value]; fitArtboard(); changed(); }
     });
     for (const key of ['width', 'height']) addControl(output, key, `${key[0].toUpperCase() + key.slice(1)} px`, [64, 4096, 1], value => {
       settings[key] = Math.round(E.clamp(Number(value) || 64, 64, 4096)); fitArtboard(); changed();
     });
+    const loopLabels = { loopDuration: 'Loop seconds', loopMaxEdge: 'Max edge px', loopFPS: 'Frame rate' };
+    for (const key of ['loopDuration', 'loopFPS', 'loopMaxEdge']) {
+      const c = addControl(output, key, loopLabels[key], key === 'loopFPS' ? [LOOP_FPS] : EXPORT_RANGES[key], value => {
+        settings[key] = key === 'loopFPS' ? Number(value)
+          : Math.round(E.clamp(Number(value) || EXPORT_DEFAULTS[key], EXPORT_RANGES[key][0], EXPORT_RANGES[key][1]));
+        changed();
+      });
+      c.domElement.closest('li').dataset.animationExport = 'true';
+    }
     // Give the original dat.gui folder titles keyboard support as well.
     gui.domElement.querySelectorAll('li.title').forEach(title => {
       title.tabIndex = 0; title.setAttribute('role', 'button');
@@ -306,7 +332,7 @@ window.CornerEngine = E;
     framePending = true;
     requestAnimationFrame(timestamp => {
       framePending = false;
-      const running = settings.waveEnabled && settings.waveAmplitude > 0 && settings.waveSpeed > 0 && !document.hidden;
+      const running = !busy && settings.waveEnabled && settings.waveAmplitude > 0 && settings.waveSpeed > 0 && !document.hidden;
       // Freeze phase during direct edits so handles stay under the pointer.
       const editing = Boolean(drag);
       if (running && !editing && lastFrameTime !== null) {
@@ -401,8 +427,21 @@ window.CornerEngine = E;
     if (busy) return;
     busy = true; $('export').disabled = true; $('export').classList.add('busy');
     const exportSettings = { ...settings }, exportPoints = E.copyPoints(displayPoints);
+    const exportBasePoints = E.copyPoints(points), exportPhase = wavePhase;
     let output;
     try {
+      if (exportSettings.exportFormat !== 'PNG') {
+        const job = startAnimationExport({ settings: exportSettings, points: exportBasePoints, phase: exportPhase }, progress => {
+          $('export-label').textContent = `${Math.round(progress * 100)}% ${exportSettings.exportFormat}`;
+        });
+        cancelExport = job.cancel;
+        $('reset').hidden = true; $('cancel-export').hidden = false;
+        $('export-label').textContent = `0% ${exportSettings.exportFormat}`;
+        const { blob, plan } = await job.promise;
+        download(blob, `corner-${exportSettings.color.slice(1)}-${plan.width}x${plan.height}-${plan.seconds}s.${plan.format.toLowerCase()}`);
+        toast(`Exported ${plan.seconds}s looping ${plan.format} · ${plan.width} × ${plan.height}.`);
+        return;
+      }
       $('export-label').textContent = 'Rendering…';
       await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
       output = document.createElement('canvas'); output.width = exportSettings.width; output.height = exportSettings.height;
@@ -416,12 +455,18 @@ window.CornerEngine = E;
       });
       download(blob, `corner-${exportSettings.color.slice(1)}-${output.width}x${output.height}.png`);
       toast(`Exported ${output.width} × ${output.height} PNG — no guides or handles.`);
-    } catch (error) { console.error(error); toast(error.message || 'Export failed. Try a smaller resolution.'); }
+    } catch (error) {
+      if (error.name === 'AbortError') toast('Export cancelled.');
+      else { console.error(error); toast(error.message || 'Export failed. Try a smaller resolution.'); }
+    }
     finally {
       if (output) { output.width = 1; output.height = 1; }
-      busy = false; $('export').disabled = false; $('export').classList.remove('busy'); $('export-label').textContent = 'Export PNG';
+      cancelExport = null; $('cancel-export').hidden = true; $('reset').hidden = false;
+      busy = false; $('export').disabled = false; $('export').classList.remove('busy');
+      lastFrameTime = null; updateExportInfo(); schedule();
     }
   });
+  $('cancel-export').addEventListener('click', () => cancelExport?.());
   $('save-setup').addEventListener('click', () => {
     commit(); download(new Blob([JSON.stringify(stateObject(), null, 2)], { type: 'application/json' }), 'corner-gradient-setup.json');
     toast('Setup saved. Use Load setup to restore it later.');

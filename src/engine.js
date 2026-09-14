@@ -8,14 +8,31 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 // contour ordered with smooth velocities, even for nearly coincident anchors.
 // The inverse maps pointer edits on the moving contour back to the base shape.
 function wavePoints(points, settings, phase, inverse = false) {
+  return deformPoints(points, settings, [phase, phase * 1.31, phase * .73], inverse);
+}
+
+// Every temporal component completes an integer number of turns. This matches
+// both position and velocity across the seam, without duplicating the end frame.
+function loopPoints(points, settings, progress, seconds, startPhase = 0) {
+  if (!settings.waveSpeed) return wavePoints(points, settings, startPhase);
+  const turns = Math.max(1, Math.round(settings.waveSpeed * seconds));
+  const loopPhase = ((progress % 1 + 1) % 1) * Math.PI * 2;
+  return deformPoints(points, settings, [
+    startPhase + loopPhase * turns,
+    startPhase * 1.31 + loopPhase * Math.max(1, Math.round(turns * 1.31)),
+    startPhase * .73 + loopPhase * Math.max(1, Math.round(turns * .73)),
+  ]);
+}
+
+function deformPoints(points, settings, phases, inverse = false) {
   const result = copyPoints(points);
   if (!settings.waveEnabled || !settings.waveAmplitude) return result;
   const strength = settings.waveAmplitude / 100 * 3 * (inverse ? -1 : 1);
   const wave = (position, offset) => {
     const spatial = position * Math.PI * 2 / settings.waveLength;
-    const primary = Math.sin(spatial - phase + offset);
-    const detail = .45 * Math.sin(spatial * 1.73 - phase * 1.31 + offset + 1.2)
-      + .2 * Math.sin(spatial * 2.41 + phase * .73 + offset + 2.7);
+    const primary = Math.sin(spatial - phases[0] + offset);
+    const detail = .45 * Math.sin(spatial * 1.73 - phases[1] + offset + 1.2)
+      + .2 * Math.sin(spatial * 2.41 + phases[2] + offset + 2.7);
     return (primary + settings.waveComplexity * detail) / (1 + settings.waveComplexity * .65);
   };
   for (const axis of ['x', 'y']) {
@@ -258,7 +275,7 @@ async function renderAsync(ctx, width, height, model, onProgress = () => {}) {
   }
 }
 
-const CornerEngine = Object.freeze({ clamp, copyPoints, wavePoints, segments, evaluate,
+const CornerEngine = Object.freeze({ clamp, copyPoints, wavePoints, loopPoints, segments, evaluate,
   radialLUT, transferLUT, colorRGB, prepare, render, renderAsync });
 
 export default CornerEngine;
