@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111214">
+  <meta name="description" content="Shape a bottom-right corner gradient with four draggable anchors. Export a clean PNG at up to 4K resolution.">
+  <title>Corner — Gradient Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2317191d'/%3E%3Cpath d='M8 24C20 24 24 20 24 8M8 27H27V8' fill='none' stroke='%23c8bcff' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="m8 5-5 5 5 5M3 10h11a6 6 0 0 1 6 6v2"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m16 5 5 5-5 5m5-5H10a6 6 0 0 0-6 6v2"/></symbol>
+    <symbol id="i-curve" viewBox="0 0 24 24"><path d="M4 19C11 19 19 11 19 4"/><rect x="2" y="17" width="4" height="4"/><rect x="17" y="2" width="4" height="4"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24"><path d="m4 3 5 17 3-7 7-3L4 3Zm8 10 6 7"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h12l4 4v14H3V3h2Zm2 0v7h10V3M7 21v-7h10v7"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V4h7l3 3h8v13H3V7Zm0 3h18"/></symbol>
+  </defs></svg>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M6 33H34V6" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".4"/><path d="M6 28C22 28 29 21 29 6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="6" cy="28" r="2.5" fill="currentColor"/><circle cx="29" cy="6" r="2.5" fill="currentColor"/></svg>
+      <span class="wordmark">corner</span>
+      <span class="brand-caption">GRADIENT<br>STUDIO / 01</span>
+    </div>
+    <div class="top-actions">
+      <button id="reset" class="btn quiet" title="Reset everything (you can undo this)"><svg class="icon"><use href="#i-reset"/></svg><span class="label">Reset</span></button>
+      <button id="export" class="btn primary"><svg class="icon export-icon"><use href="#i-download"/></svg><span id="export-label">Export PNG</span></button>
+    </div>
+  </header>
+  <main class="app">
+    <section class="workspace" aria-label="Gradient canvas editor">
+      <div class="workspace-header">
+        <div class="workspace-heading"><span class="eyebrow">Your canvas</span><span id="ratio-badge" class="status-pill">16:9</span></div>
+        <div class="workspace-tools">
+          <div class="history"><button id="undo" class="icon-btn" aria-label="Undo" title="Undo (Ctrl / Cmd + Z)" disabled><svg class="icon"><use href="#i-undo"/></svg></button><button id="redo" class="icon-btn" aria-label="Redo" title="Redo (Ctrl / Cmd + Shift + Z)" disabled><svg class="icon"><use href="#i-redo"/></svg></button></div>
+          <div class="segmented" aria-label="Canvas view"><button id="edit-view" aria-pressed="true"><svg class="icon"><use href="#i-curve"/></svg>Edit contour</button><button id="preview-view" aria-pressed="false"><svg class="icon"><use href="#i-eye"/></svg>Preview</button></div>
+        </div>
+      </div>
+      <div id="stage-shell" class="stage-shell">
+        <div id="artboard-wrap" class="artboard-wrap" style="width:800px;height:450px">
+          <div class="artboard-label"><span class="dot"></span><span id="dimensions-label">3840 × 2160 px</span></div>
+          <div id="artboard" class="artboard">
+            <canvas id="gradient" width="800" height="450" aria-label="Black canvas fading to the selected color in the bottom-right corner"></canvas>
+            <svg id="overlay" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" aria-label="Editable gradient contour">
+              <path id="control-polygon" class="control-polygon"/>
+              <path id="curve-back" class="curve-back"/>
+              <path id="curve-line" class="curve-line"/>
+              <path id="curve-hit" class="curve-hit" tabindex="0" role="button" aria-label="Select contour and show its four anchors"/>
+              <g id="anchors"></g>
+              <path id="corner-mark" class="corner-mark" fill="none"/>
+            </svg>
+          </div>
+          <div class="artboard-foot"><div class="color-pair"><span class="swatch black"></span><span>#000000</span><span class="color-arrow">→</span><span id="color-chip" class="swatch"></span><span id="color-label">#606060</span></div><span id="curve-caption">4 anchors · 3 Bézier segments</span></div>
+        </div>
+      </div>
+      <footer class="workspace-footer">
+        <div class="hint"><svg class="icon"><use href="#i-cursor"/></svg><span><strong>A & D slide along the edges. B & C shape the curve.</strong><br>The contour is the outer edge of the fade. Everything beyond it stays black.</span></div>
+        <div class="keyboard-hint"><kbd>Space</kbd> preview <span style="padding:0 5px">/</span> <kbd>Shift</kbd> fine drag</div>
+      </footer>
+    </section>
+    <aside class="inspector" aria-label="Gradient settings">
+      <div class="inspector-intro"><div class="row"><h1>Shape the corner.</h1><span id="library-badge" class="library-badge">dat.gui</span></div><p>A little color. Exactly where you want it.</p></div>
+      <div id="gui-host"></div>
+      <p id="curve-note" class="curve-note">Through anchors: all four points sit on the contour. Their order is preserved to keep the fade smooth and free of loops.</p>
+      <div class="anchor-info"><div class="anchor-info-top"><span id="anchor-title">CONTOUR SELECTED</span><span id="anchor-kind">4 anchors</span></div><div id="anchor-coordinates">Select a point to fine-tune its position.</div></div>
+      <div class="inspector-bottom">
+        <div class="setup-actions"><button id="save-setup" class="btn quiet"><svg class="icon"><use href="#i-save"/></svg>Save setup</button><button id="load-setup" class="btn quiet"><svg class="icon"><use href="#i-folder"/></svg>Load setup</button></div>
+        <input type="file" id="setup-file" accept=".json,application/json" hidden>
+        <div class="save-status"><span class="dot"></span><span id="save-status-text">Settings stay on this device</span></div>
+        <p id="library-note"></p>
+      </div>
+    </aside>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <noscript><p style="padding:24px">Enable JavaScript to edit and export a corner gradient.</p></noscript>
+  <script src="engine.js"></script>
+  <script src="fallback-gui.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
