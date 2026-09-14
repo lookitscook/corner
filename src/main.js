@@ -2,7 +2,9 @@
 import { GUI } from 'dat.gui';
 import E from './engine.js';
 import { RENDER_DEFAULTS, RENDER_RANGES, RENDER_STYLES, readRenderSettings } from './render-settings.js';
-import { EXPORT_DEFAULTS, EXPORT_FORMATS, EXPORT_RANGES, LOOP_FPS, readExportSettings, animationPlan } from './export-settings.js';
+import { EXPORT_DEFAULTS, EXPORT_FORMATS, EXPORT_RANGES, LOOP_FPS, readExportSettings, animationPlan, checkAnimationSize } from './export-settings.js';
+import { animationCrop } from './animation-crop.js';
+import { LOGO_DEFAULTS, LOGO_SVG, readLogoSettings, logoBox } from './logo.js';
 import { startAnimationExport } from './animation-export.js';
 import './styles.css';
 
@@ -13,7 +15,7 @@ window.CornerEngine = E;
   const $ = id => document.getElementById(id);
   const STORAGE_KEY = 'corner-gradient-studio.v1';
   const FORMATS = { '4K UHD': [3840, 2160], '1080p': [1920, 1080],
-    'Square': [2048, 2048], 'Portrait': [2160, 3840], 'Custom': null };
+    'Square': [2048, 2048], 'Portrait': [2160, 3840], 'Custom': null, 'Cropped': null };
   const PRESETS = {
     'Sketch': [[1, 0], [.61, .105], [.25, .385], [0, 1]],
     'Round': [[1, 0], [.866, .5], [.5, .866], [0, 1]],
@@ -25,7 +27,7 @@ window.CornerEngine = E;
     waveLength: 1.4, waveComplexity: .4, waveEdges: .35 };
   const WAVE_RANGES = { waveAmplitude: [0, 35, .5], waveSpeed: [0, 1, .01],
     waveLength: [.3, 3, .05], waveComplexity: [0, 1, .05], waveEdges: [0, 1, .05] };
-  const DEFAULT_SETTINGS = { ...WAVE_DEFAULTS, ...RENDER_DEFAULTS, ...EXPORT_DEFAULTS, color: '#606060', size: 40, falloff: 1,
+  const DEFAULT_SETTINGS = { ...WAVE_DEFAULTS, ...RENDER_DEFAULTS, ...EXPORT_DEFAULTS, ...LOGO_DEFAULTS, color: '#606060', size: 40, falloff: 1,
     blend: 'Smooth', dither: 'Fine grain', mode: 'Through anchors',
     preset: 'Sketch', width: 3840, height: 2160, format: '4K UHD',
     bottom: 40, right: 40, bx: 24.4, by: 4.2, cx: 10, cy: 15.4 };
@@ -39,6 +41,8 @@ window.CornerEngine = E;
   let lastColor = settings.color, storageAvailable = true;
   let wavePhase = 0, lastFrameTime = null;
   let cancelExport = null;
+  let logoDrag = null;
+  $('logo-art').innerHTML = LOGO_SVG;
   let displayPoints = E.copyPoints(points);
   const canvas = $('gradient'), overlay = $('overlay'), wrap = $('artboard-wrap');
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -54,11 +58,11 @@ window.CornerEngine = E;
     settings.bottom = points[0].x * 100; settings.right = points[3].y * 100;
     settings.bx = points[1].x * 100; settings.by = points[1].y * 100;
     settings.cx = points[2].x * 100; settings.cy = points[2].y * 100;
-    settings.format = currentFormat();
+    settings.format = settings.exportCropped ? 'Cropped' : currentFormat();
   }
   function stateObject() {
     const keys = ['color', 'falloff', 'blend', 'dither', 'mode', 'preset', 'width', 'height',
-      ...Object.keys(WAVE_DEFAULTS), ...Object.keys(RENDER_DEFAULTS), ...Object.keys(EXPORT_DEFAULTS)];
+      ...Object.keys(WAVE_DEFAULTS), ...Object.keys(RENDER_DEFAULTS), ...Object.keys(EXPORT_DEFAULTS), ...Object.keys(LOGO_DEFAULTS)];
     return { format: 'corner-gradient', version: 1,
       settings: Object.fromEntries(keys.map(k => [k, settings[k]])), points: E.copyPoints(points) };
   }
@@ -82,7 +86,7 @@ window.CornerEngine = E;
       throw new Error('The endpoints must be on the bottom and right edges, away from the corner.');
     for (let i = 1; i < 4; i++) if (p[i].x >= p[i - 1].x || p[i].y <= p[i - 1].y)
       throw new Error('The anchors must stay ordered from the bottom edge to the right edge.');
-    const clean = { ...readRenderSettings(s), ...readExportSettings(s) };
+    const clean = { ...readRenderSettings(s), ...readExportSettings(s), ...readLogoSettings(s) };
     for (const k of ['color', 'falloff', 'blend', 'dither', 'mode', 'preset', 'width', 'height']) clean[k] = s[k];
     for (const [key, fallback] of Object.entries(WAVE_DEFAULTS)) {
       // Older version-1 setups retain their original static appearance.
@@ -118,12 +122,21 @@ window.CornerEngine = E;
   }
   function updateExportInfo() {
     if (!busy) $('export-label').textContent = `Export ${settings.exportFormat}`;
-    $('export-note').hidden = settings.exportFormat === 'PNG';
-    if (settings.exportFormat === 'PNG') return;
+    $('export-note').hidden = settings.exportFormat === 'PNG' && !settings.exportCropped;
+    if ($('export-note').hidden) return;
     try {
+      if (settings.exportFormat === 'PNG') {
+        const crop = animationCrop({ width: settings.width, height: settings.height,
+          frames: settings.loopDuration * settings.loopFPS, seconds: settings.loopDuration }, points, settings, wavePhase);
+        $('export-note').textContent = `${crop.width} × ${crop.height} cropped PNG. Includes the corner's full animated extent.`;
+        return;
+      }
       const plan = animationPlan(settings);
+      const bounds = settings.exportCropped ? animationCrop(plan, points, settings, wavePhase) : plan;
+      checkAnimationSize({ ...plan, width: bounds.width, height: bounds.height });
       const moving = settings.waveEnabled && settings.waveAmplitude > 0 && settings.waveSpeed > 0;
-      $('export-note').textContent = `${plan.width} × ${plan.height} before cropping · ${plan.frames} frames · ${plan.seconds}s loop. Automatically cropped to the corner across the whole loop. ` +
+      $('export-note').textContent = `${bounds.width} × ${bounds.height} · ${plan.frames} frames · ${plan.seconds}s loop. ` +
+        (settings.exportCropped ? 'Cropped to the corner across the whole loop. ' : 'Full canvas. ') +
         (moving ? 'Wave motion is fitted to whole cycles for a seamless loop.' : 'Enable Animate and set amplitude and speed above zero for motion.');
     } catch (error) { $('export-note').textContent = error.message; }
   }
@@ -242,16 +255,21 @@ window.CornerEngine = E;
     addControl(middle, 'by', 'B · up %', [0, 100, .1], value => moveAnchor(1, points[1].x, Number(value) / 100));
     addControl(middle, 'cx', 'C · left %', [0, 100, .1], value => moveAnchor(2, Number(value) / 100, points[2].y));
     addControl(middle, 'cy', 'C · up %', [0, 100, .1], value => moveAnchor(2, points[2].x, Number(value) / 100));
+    const logo = folder('Logo');
+    addControl(logo, 'logoEnabled', 'Show logo', [], () => changed());
+    addControl(logo, 'logoSize', 'Size %', [4, 80, .5], () => changed());
     const output = folder('Canvas & export');
     addControl(output, 'exportFormat', 'File type', [EXPORT_FORMATS], () => changed());
-    addControl(output, 'format', 'Format', [Object.keys(FORMATS)], value => {
-      if (FORMATS[value]) { [settings.width, settings.height] = FORMATS[value]; fitArtboard(); changed(); }
+    addControl(output, 'format', 'Resolution', [Object.keys(FORMATS)], value => {
+      settings.exportCropped = value === 'Cropped';
+      if (FORMATS[value]) [settings.width, settings.height] = FORMATS[value];
+      fitArtboard(); changed();
     });
     for (const key of ['width', 'height']) addControl(output, key, `${key[0].toUpperCase() + key.slice(1)} px`, [64, 4096, 1], value => {
       settings[key] = Math.round(E.clamp(Number(value) || 64, 64, 4096)); fitArtboard(); changed();
     });
-    const loopLabels = { loopDuration: 'Loop seconds', loopMaxEdge: 'Max edge px', loopFPS: 'Frame rate' };
-    for (const key of ['loopDuration', 'loopFPS', 'loopMaxEdge']) {
+    const loopLabels = { loopDuration: 'Loop seconds', loopFPS: 'Frame rate' };
+    for (const key of ['loopDuration', 'loopFPS']) {
       const c = addControl(output, key, loopLabels[key], key === 'loopFPS' ? [LOOP_FPS] : EXPORT_RANGES[key], value => {
         settings[key] = key === 'loopFPS' ? Number(value)
           : Math.round(E.clamp(Number(value) || EXPORT_DEFAULTS[key], EXPORT_RANGES[key][0], EXPORT_RANGES[key][1]));
@@ -280,6 +298,13 @@ window.CornerEngine = E;
   function screenPoint(p) { return { x: (1 - p.x) * cssWidth, y: (1 - p.y) * cssHeight }; }
   function updateOverlay() {
     const points = displayPoints;
+    const box = logoBox(cssWidth, cssHeight, settings), layer = $('logo-layer');
+    layer.hidden = !settings.logoEnabled;
+    Object.assign(layer.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.size}px`, height: `${box.size}px` });
+    layer.classList.toggle('preview', !showContour);
+    layer.classList.toggle('dragging', Boolean(logoDrag));
+    $('logo-art').tabIndex = showContour && settings.logoEnabled ? 0 : -1;
+    $('logo-resize').tabIndex = showContour && settings.logoEnabled ? 0 : -1;
     overlay.classList.toggle('preview', !showContour);
     overlay.classList.toggle('unselected', !selected);
     overlay.setAttribute('aria-hidden', String(!showContour));
@@ -334,7 +359,7 @@ window.CornerEngine = E;
       framePending = false;
       const running = !busy && settings.waveEnabled && settings.waveAmplitude > 0 && settings.waveSpeed > 0 && !document.hidden;
       // Freeze phase during direct edits so handles stay under the pointer.
-      const editing = Boolean(drag);
+      const editing = Boolean(drag || logoDrag);
       if (running && !editing && lastFrameTime !== null) {
         wavePhase += Math.min((timestamp - lastFrameTime) / 1000, .05) * settings.waveSpeed * Math.PI * 2;
         geometryDirty = paintDirty = true;
@@ -369,6 +394,57 @@ window.CornerEngine = E;
   function setView(edit) { showContour = edit; if (edit) selected = true; schedule(); }
   $('edit-view').addEventListener('click', () => setView(true));
   $('preview-view').addEventListener('click', () => setView(false));
+  function placeLogo(x, y, size) {
+    const shortSide = Math.min(cssWidth, cssHeight);
+    size = E.clamp(size, shortSide * .04, shortSide * .8);
+    settings.logoSize = size / shortSide * 100;
+    settings.logoX = E.clamp(x + size, size, cssWidth) / cssWidth;
+    settings.logoY = E.clamp(y + size, size, cssHeight) / cssHeight;
+    refreshControls(); schedule();
+  }
+  $('logo-layer').addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !showContour || logoDrag) return;
+    e.preventDefault();
+    logoDrag = { id: e.pointerId, resize: e.target.closest('#logo-resize') !== null,
+      startX: e.clientX, startY: e.clientY, ...logoBox(cssWidth, cssHeight, settings) };
+    selectedIndex = -1;
+    $('logo-layer').setPointerCapture(e.pointerId);
+    $(logoDrag.resize ? 'logo-resize' : 'logo-art').focus({ preventScroll: true });
+    schedule();
+  });
+  $('logo-layer').addEventListener('pointermove', e => {
+    if (!logoDrag || e.pointerId !== logoDrag.id) return;
+    e.preventDefault();
+    const d = logoDrag, factor = e.shiftKey ? .2 : 1;
+    const dx = (e.clientX - d.startX) * factor, dy = (e.clientY - d.startY) * factor;
+    if (d.resize) {
+      const size = E.clamp(d.size - (dx + dy) / 2, Math.min(cssWidth, cssHeight) * .04,
+        Math.min(Math.min(cssWidth, cssHeight) * .8, d.x + d.size, d.y + d.size));
+      placeLogo(d.x + d.size - size, d.y + d.size - size, size);
+    } else placeLogo(d.x + dx, d.y + dy, d.size);
+  });
+  function endLogoDrag(e) {
+    if (!logoDrag || logoDrag.id !== e.pointerId) return;
+    logoDrag = null;
+    if ($('logo-layer').hasPointerCapture(e.pointerId)) $('logo-layer').releasePointerCapture(e.pointerId);
+    commit(); lastFrameTime = null; schedule();
+  }
+  for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) $('logo-layer').addEventListener(event, endLogoDrag);
+  $('logo-layer').addEventListener('keydown', e => {
+    if (!showContour || !settings.logoEnabled || e.ctrlKey || e.metaKey) return;
+    const box = logoBox(cssWidth, cssHeight, settings), step = e.shiftKey ? 10 : 1;
+    if (e.key.startsWith('Arrow')) {
+      e.preventDefault(); e.stopPropagation();
+      placeLogo(box.x + (e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0),
+        box.y + (e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0), box.size);
+    } else if (['+', '=', '-'].includes(e.key)) {
+      e.preventDefault(); e.stopPropagation();
+      const size = E.clamp(box.size + (e.key === '-' ? -step : step), Math.min(cssWidth, cssHeight) * .04,
+        Math.min(Math.min(cssWidth, cssHeight) * .8, box.x + box.size, box.y + box.size));
+      placeLogo(box.x + box.size - size, box.y + box.size - size, size);
+    } else return;
+    commit();
+  });
   $('curve-hit').addEventListener('keydown', e => {
     if (e.key === 'Enter') { selected = true; selectedIndex = -1; schedule(); }
   });
@@ -449,6 +525,14 @@ window.CornerEngine = E;
       if (!outputContext) throw new Error('Not enough canvas memory. Try a smaller export.');
       await E.renderAsync(outputContext, output.width, output.height, E.prepare(exportPoints, exportSettings),
         progress => { $('export-label').textContent = `Rendering ${Math.round(progress * 100)}%`; });
+      if (exportSettings.exportCropped) {
+        const crop = animationCrop({ width: output.width, height: output.height,
+          frames: exportSettings.loopDuration * exportSettings.loopFPS, seconds: exportSettings.loopDuration },
+        exportBasePoints, exportSettings, exportPhase);
+        const pixels = outputContext.getImageData(crop.x, crop.y, crop.width, crop.height);
+        output.width = crop.width; output.height = crop.height;
+        outputContext.putImageData(pixels, 0, 0);
+      }
       $('export-label').textContent = 'Encoding PNG…';
       const blob = await new Promise((resolve, reject) => {
         output.toBlob(value => value ? resolve(value) : reject(new Error('PNG encoding failed. Try a smaller resolution.')), 'image/png');

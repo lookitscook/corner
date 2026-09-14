@@ -49,6 +49,17 @@ button:hover:not(:disabled) { border-color: #5b5869; background: #28292f; }
 #gradient { width: 100%; height: 100%; display: block; background: #000; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; touch-action: none; user-select: none; }
 #overlay.preview { display: none; }
+#logo-layer { position: absolute; touch-action: none; user-select: none; }
+#logo-art { width: 100%; height: 100%; cursor: grab; outline: 1px dashed #c8bcff90; }
+#logo-art svg { display: block; width: 100%; height: 100%; opacity: .5; pointer-events: none; }
+#logo-art:focus-visible { outline: 2px solid var(--accent); }
+#logo-layer.dragging #logo-art { cursor: grabbing; }
+#logo-resize { position: absolute; top: -7px; left: -7px; width: 14px; height: 14px; padding: 0; border: 2px solid var(--accent); background: #17151e; border-radius: 2px; cursor: nwse-resize; }
+#logo-resize::before { content: ''; position: absolute; inset: -8px; }
+#logo-layer.preview { pointer-events: none; }
+#logo-layer.preview #logo-art { outline: none; cursor: default; }
+#logo-layer.preview #logo-art svg { opacity: 1; }
+#logo-layer.preview #logo-resize { display: none; }
 .curve-back { fill: none; stroke: #000b; stroke-width: 4; pointer-events: none; }
 .curve-line { fill: none; stroke: var(--accent); stroke-width: 1.3; pointer-events: none; opacity: .92; }
 .curve-hit { fill: none; stroke: transparent; stroke-width: 24; cursor: pointer; pointer-events: stroke; }

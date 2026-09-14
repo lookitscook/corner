@@ -38,7 +38,7 @@ async function captureBlobs(page) {
   });
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
   const errors = [];
   const externalRequests = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -56,6 +56,10 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => Boolean(window.CornerStudio));
   await expect(page.locator('#gui-host .dg.main')).toBeVisible();
   await expect(page.locator('#library-badge')).toHaveText('dat.gui');
+  // Keep renderer-only regression fixtures independent of the optional logo.
+  if (!testInfo.title.includes('logo')) await page.evaluate(() => {
+    const s = CornerStudio.getState(); s.settings.logoEnabled = false; CornerStudio.setState(s);
+  });
 });
 
 test.afterEach(async ({ page }) => {
@@ -248,6 +252,27 @@ test.describe('mobile', () => {
     expect(after.y).toBeGreaterThan(before); same(after.x, 0);
     await page.screenshot({ path: testInfo.outputPath('mobile.png'), fullPage: true });
   });
+  test('logo supports touch dragging and proportional resizing', async ({ page, context }, testInfo) => {
+    await disableWave(page);
+    await page.locator('#logo-layer').scrollIntoViewIfNeeded();
+    const cdp = await context.newCDPSession(page);
+    const touchDrag = async (x, y, dx, dy) => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx, y: y + dy }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+    };
+    const before = await page.locator('#logo-layer').boundingBox();
+    await touchDrag(before.x + before.width / 2, before.y + before.height / 2, -35, -20);
+    const moved = await page.locator('#logo-layer').boundingBox();
+    same(moved.x, before.x - 35, .5); same(moved.y, before.y - 20, .5);
+    const handle = await page.locator('#logo-resize').boundingBox();
+    await touchDrag(handle.x + handle.width / 2, handle.y + handle.height / 2, -15, -15);
+    const resized = await page.locator('#logo-layer').boundingBox();
+    expect(resized.width).toBeGreaterThan(moved.width); same(resized.width, resized.height, .1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('logo-mobile.png'), fullPage: true });
+  });
 });
 
 test('Ordered dither controls, history, setup persistence, and frozen PNG export', async ({ page }, testInfo) => {
@@ -338,8 +363,8 @@ test('Ordered dither controls, history, setup persistence, and frozen PNG export
   await expect(page.locator('[data-control="orderedSpacing"]')).not.toBeVisible();
 });
 
-for (const format of ['GIF', 'APNG']) {
-  test(`${format} exports a real repeating animation from frozen settings`, async ({ page }, testInfo) => {
+for (const format of ['GIF', 'APNG']) for (const cropped of [false, true]) {
+  test(`${format} exports a ${cropped ? 'cropped' : 'full canvas'} repeating animation from frozen settings`, async ({ page }, testInfo) => {
     await page.evaluate(format => {
       const s = CornerStudio.getState();
       Object.assign(s.settings, { color: '#7088a0', waveEnabled: true, waveSpeed: .5, waveAmplitude: 25,
@@ -349,16 +374,20 @@ for (const format of ['GIF', 'APNG']) {
     await page.getByRole('button', { name: /Canvas & export/ }).click();
     await page.locator('[data-control="exportFormat"] select').selectOption(format);
     await setNumber(page, 'loopDuration', 2);
-    await setNumber(page, 'loopMaxEdge', 128);
+    await setNumber(page, 'width', 128);
+    await setNumber(page, 'height', 72);
+    await page.locator('[data-control="format"] select').selectOption(cropped ? 'Cropped' : 'Custom');
     await page.locator('[data-control="loopFPS"] select').selectOption('10');
     await expect(page.locator('#export-label')).toHaveText(`Export ${format}`);
-    await expect(page.locator('#export-note')).toContainText('128 × 72 before cropping · 20 frames');
+    await expect(page.locator('#export-note')).toContainText('20 frames');
+    await expect(page.locator('#export-note')).toContainText(cropped ? 'Cropped to the corner' : '128 × 72');
     await page.screenshot({ path: testInfo.outputPath('animation-controls.png'), fullPage: true });
     const saved = await state(page);
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('corner-gradient-studio.v1')))).toEqual(saved);
     await page.reload();
     await page.waitForFunction(() => Boolean(window.CornerStudio));
     expect(await state(page)).toEqual(saved);
+    expect((await state(page)).settings.exportCropped).toBe(cropped);
     await captureBlobs(page);
     await page.evaluate(() => new Promise(requestAnimationFrame));
     const expected = await page.evaluate(() => {
@@ -381,8 +410,10 @@ for (const format of ['GIF', 'APNG']) {
     await writeFile(testInfo.outputPath(`loop.${format.toLowerCase()}`), bytes);
     const decoded = format === 'GIF' ? decodeGIF(bytes) : decodeAPNG(bytes);
     expect([decoded.frames.length, decoded.plays]).toEqual([20, 0]);
-    expect(decoded.width).toBeLessThan(128);
-    expect(decoded.height).toBeLessThan(72);
+    if (cropped) {
+      expect(decoded.width).toBeLessThan(128);
+      expect(decoded.height).toBeLessThan(72);
+    } else expect([decoded.width, decoded.height]).toEqual([128, 72]);
     const cropX = 128 - decoded.width, cropY = 72 - decoded.height, expectedCrop = [];
     for (let y = 0; y < 72; y++) for (let x = 0; x < 128; x++) {
       const pixel = expected.slice((y * 128 + x) * 4, (y * 128 + x + 1) * 4);
@@ -410,17 +441,152 @@ for (const format of ['GIF', 'APNG']) {
       finally { URL.revokeObjectURL(url); }
     })).toEqual([decoded.width, decoded.height]);
     const legacy = structuredClone(saved);
-    for (const key of ['exportFormat', 'loopDuration', 'loopFPS', 'loopMaxEdge']) delete legacy.settings[key];
+    for (const key of ['exportFormat', 'exportCropped', 'loopDuration', 'loopFPS']) delete legacy.settings[key];
     await page.evaluate(s => CornerStudio.setState(s), legacy);
     expect((await state(page)).settings.exportFormat).toBe('PNG');
+    expect((await state(page)).settings.exportCropped).toBe(false);
     await expect(page.locator('#export-label')).toHaveText('Export PNG');
+  });
+}
+
+test('Cropped resolution also crops PNG pixels and switching presets restores full size', async ({ page }) => {
+  await page.evaluate(() => {
+    const s = CornerStudio.getState();
+    Object.assign(s.settings, { width: 320, height: 180, waveEnabled: false });
+    CornerStudio.setState(s);
+  });
+  await page.getByRole('button', { name: /Canvas & export/ }).click();
+  await page.locator('[data-control="format"] select').selectOption('Cropped');
+  expect((await state(page)).settings.exportCropped).toBe(true);
+  await page.locator('#undo').click();
+  expect((await state(page)).settings.exportCropped).toBe(false);
+  await page.locator('#redo').click();
+  expect((await state(page)).settings.exportCropped).toBe(true);
+  await page.reload();
+  await page.waitForFunction(() => Boolean(window.CornerStudio));
+  await expect(page.locator('[data-control="format"] select')).toHaveValue('Cropped');
+  await captureBlobs(page);
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  const expected = await page.evaluate(() => {
+    const s = CornerStudio.getState().settings, points = CornerStudio.getAnimatedPoints();
+    const c = document.createElement('canvas'); c.width = s.width; c.height = s.height;
+    const ctx = c.getContext('2d'); CornerEngine.render(ctx, c.width, c.height, CornerEngine.prepare(points, s));
+    const x = Math.floor((1 - points[0].x) * (c.width - 1)), y = Math.floor((1 - points[3].y) * (c.height - 1));
+    return { width: c.width - x, height: c.height - y, pixels: Array.from(ctx.getImageData(x, y, c.width - x, c.height - y).data) };
+  });
+  await page.locator('#export').click();
+  await page.waitForFunction(() => window.__lastBlob && !document.querySelector('#export').disabled);
+  expect(await page.evaluate(async () => {
+    const bitmap = await createImageBitmap(window.__lastBlob), c = document.createElement('canvas');
+    c.width = bitmap.width; c.height = bitmap.height; const ctx = c.getContext('2d'); ctx.drawImage(bitmap, 0, 0);
+    return { width: c.width, height: c.height, pixels: Array.from(ctx.getImageData(0, 0, c.width, c.height).data) };
+  })).toEqual(expected);
+  await page.getByRole('button', { name: /Canvas & export/ }).click();
+  await page.locator('[data-control="format"] select').selectOption('1080p');
+  const s = (await state(page)).settings;
+  expect([s.exportCropped, s.width, s.height]).toEqual([false, 1920, 1080]);
+  await page.evaluate(() => { window.__lastBlob = null; });
+  await page.locator('#export').click();
+  await page.waitForFunction(() => window.__lastBlob && !document.querySelector('#export').disabled);
+  expect(await page.evaluate(async () => {
+    const bitmap = await createImageBitmap(window.__lastBlob); return [bitmap.width, bitmap.height];
+  })).toEqual([1920, 1080]);
+});
+
+test('logo dragging, proportional scaling, opacity, history, and persistence', async ({ page }, testInfo) => {
+  await disableWave(page);
+  const art = page.locator('#logo-art'), layer = page.locator('#logo-layer');
+  await expect(layer).toBeVisible();
+  await expect(art.locator('svg')).toHaveCSS('opacity', '0.5');
+  const original = await state(page), before = await layer.boundingBox();
+  same(before.width, before.height, .01);
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+  await page.mouse.down(); await page.mouse.move(before.x + before.width / 2 - 70, before.y + before.height / 2 - 40, { steps: 5 }); await page.mouse.up();
+  const moved = await layer.boundingBox();
+  same(moved.x, before.x - 70, .1); same(moved.y, before.y - 40, .1);
+  same(moved.width, before.width, .1);
+  const handle = await page.locator('#logo-resize').boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down(); await page.mouse.move(handle.x + handle.width / 2 - 30, handle.y + handle.height / 2 - 30, { steps: 5 }); await page.mouse.up();
+  const scaled = await layer.boundingBox();
+  same(scaled.width, moved.width + 30, .1); same(scaled.height, scaled.width, .1);
+  same(scaled.x + scaled.width, moved.x + moved.width, .1);
+  const edited = await state(page);
+  expect(edited.points).toEqual(original.points);
+  await page.locator('#undo').click(); expect((await state(page)).settings.logoSize).toBe(original.settings.logoSize);
+  await page.locator('#redo').click(); expect(await state(page)).toEqual(edited);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('corner-gradient-studio.v1')))).toEqual(edited);
+  await page.reload(); await page.waitForFunction(() => Boolean(window.CornerStudio));
+  expect(await state(page)).toEqual(edited);
+  await page.screenshot({ path: testInfo.outputPath('logo-edit.png') });
+  await page.locator('#preview-view').click();
+  await expect(art.locator('svg')).toHaveCSS('opacity', '1');
+  await expect(page.locator('#logo-resize')).not.toBeVisible();
+  await expect(art).toHaveAttribute('tabindex', '-1');
+  const preview = await layer.boundingBox();
+  await page.mouse.move(preview.x + 20, preview.y + 20); await page.mouse.down();
+  await page.mouse.move(preview.x - 40, preview.y - 40); await page.mouse.up();
+  expect(await state(page)).toEqual(edited);
+  await page.screenshot({ path: testInfo.outputPath('logo-preview.png') });
+  await page.locator('#edit-view').click(); await art.focus(); await page.keyboard.press('ArrowLeft');
+  expect((await state(page)).settings.logoX).toBeLessThan(edited.settings.logoX);
+  await page.keyboard.press('+'); expect((await state(page)).settings.logoSize).toBeGreaterThan(edited.settings.logoSize);
+  const legacy = structuredClone(edited);
+  for (const key of ['logoEnabled', 'logoX', 'logoY', 'logoSize']) delete legacy.settings[key];
+  await page.evaluate(s => CornerStudio.setState(s), legacy);
+  await expect(layer).toBeVisible();
+  expect((await state(page)).settings.logoSize).toBe(20);
+});
+
+for (const format of ['PNG', 'GIF', 'APNG']) for (const cropped of [false, true]) {
+  test(`logo is excluded from ${cropped ? 'cropped' : 'full'} ${format} exports`, async ({ page }) => {
+    await page.evaluate(({ format, cropped }) => {
+      const s = CornerStudio.getState();
+      Object.assign(s.settings, { width: 320, height: 180, waveEnabled: false, color: '#208040',
+        exportFormat: format, exportCropped: cropped, loopDuration: 1, loopFPS: 10,
+        logoEnabled: true, logoX: .5, logoY: .5, logoSize: 30 });
+      CornerStudio.setState(s);
+    }, { format, cropped });
+    if (cropped) await page.locator('#preview-view').click();
+    await expect(page.locator('#logo-layer')).toBeVisible();
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const expected = await page.evaluate(cropped => {
+      const s = CornerStudio.getState().settings, points = CornerStudio.getAnimatedPoints();
+      const c = document.createElement('canvas'); c.width = s.width; c.height = s.height;
+      const ctx = c.getContext('2d'); CornerEngine.render(ctx, c.width, c.height, CornerEngine.prepare(points, s));
+      const x = cropped ? Math.floor((1 - points[0].x) * (c.width - 1)) : 0;
+      const y = cropped ? Math.floor((1 - points[3].y) * (c.height - 1)) : 0;
+      return { width: c.width - x, height: c.height - y,
+        pixels: Array.from(ctx.getImageData(x, y, c.width - x, c.height - y).data) };
+    }, cropped);
+    await captureBlobs(page);
+    await page.locator('#export').click();
+    await page.waitForFunction(() => window.__lastBlob && !document.querySelector('#export').disabled);
+    let decoded;
+    if (format === 'PNG') decoded = await page.evaluate(async () => {
+      const bitmap = await createImageBitmap(window.__lastBlob), c = document.createElement('canvas');
+      c.width = bitmap.width; c.height = bitmap.height; const ctx = c.getContext('2d'); ctx.drawImage(bitmap, 0, 0);
+      return { width: c.width, height: c.height, frames: [{ rgba: Array.from(ctx.getImageData(0, 0, c.width, c.height).data) }] };
+    });
+    else {
+      const bytes = Buffer.from(await page.evaluate(async () => Array.from(new Uint8Array(await window.__lastBlob.arrayBuffer()))));
+      decoded = format === 'GIF' ? decodeGIF(bytes) : decodeAPNG(bytes);
+      expect(decoded.frames.length).toBe(10); expect(decoded.plays).toBe(0);
+    }
+    expect([decoded.width, decoded.height]).toEqual([expected.width, expected.height]);
+    expect([decoded.width, decoded.height]).toEqual(cropped ? [129, 73] : [320, 180]);
+    for (const frame of decoded.frames) {
+      frame.rgba.forEach((v, i) => assert(Math.abs(v - expected.pixels[i]) <= (format === 'GIF' ? 1 : 0),
+        'Exports must match the gradient-only render, without the logo or its background'));
+    }
+    await expect(page.locator('#logo-layer')).toBeVisible();
   });
 }
 
 test('animated export can be cancelled and rejects oversized jobs without blocking the editor', async ({ page }) => {
   await captureBlobs(page);
   await page.evaluate(() => {
-    const s = CornerStudio.getState(); Object.assign(s.settings, { exportFormat: 'GIF', loopMaxEdge: 1280 });
+    const s = CornerStudio.getState(); Object.assign(s.settings, { exportFormat: 'GIF', width: 1280, height: 720 });
     CornerStudio.setState(s);
     document.querySelector('#export').click();
     document.querySelector('#cancel-export').click();
@@ -431,13 +597,13 @@ test('animated export can be cancelled and rejects oversized jobs without blocki
   await expect(page.locator('#reset')).toBeVisible();
   expect(await page.evaluate(() => Boolean(window.__lastBlob))).toBe(false);
   await page.evaluate(() => {
-    const s = CornerStudio.getState(); Object.assign(s.settings, { loopMaxEdge: 1920, loopDuration: 20, loopFPS: 30 });
+    const s = CornerStudio.getState(); Object.assign(s.settings, { width: 1920, height: 1080, loopDuration: 20, loopFPS: 30 });
     CornerStudio.setState(s); document.querySelector('#export').click();
   });
   await expect(page.locator('#toast')).toContainText('too large');
   await expect(page.locator('#export')).toBeEnabled();
   await page.evaluate(() => {
-    const s = CornerStudio.getState(); Object.assign(s.settings, { loopMaxEdge: 128, loopDuration: 1, loopFPS: 10 });
+    const s = CornerStudio.getState(); Object.assign(s.settings, { width: 128, height: 72, loopDuration: 1, loopFPS: 10 });
     CornerStudio.setState(s); document.querySelector('#export').click();
   });
   await page.waitForFunction(() => window.__lastBlob?.type === 'image/gif' && !document.querySelector('#export').disabled);

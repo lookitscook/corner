@@ -5,10 +5,25 @@ import { EXPORT_DEFAULTS, animationPlan, readExportSettings } from '../src/expor
 import { createAnimationEncoder } from '../src/animation-encoders.js';
 import { decodeGIF, decodeAPNG } from './helpers/animation-decode.js';
 import { animationCrop } from '../src/animation-crop.js';
+import { LOGO_DEFAULTS, logoBox, readLogoSettings } from '../src/logo.js';
 
 const base = [{ x: .8, y: 0 }, { x: .6, y: .15 }, { x: .2, y: .5 }, { x: 0, y: .85 }];
 const wave = { waveEnabled: true, waveSpeed: .12, waveAmplitude: 25, waveLength: 1.4, waveComplexity: .8, waveEdges: .5 };
 const near = (a, b, tolerance = 1e-7) => assert(Math.abs(a - b) < tolerance, `${a} != ${b}`);
+
+test('logo settings validate old setups and preserve square bounds across canvas ratios', () => {
+  assert.deepEqual(readLogoSettings({}), LOGO_DEFAULTS);
+  for (const bad of [{ logoEnabled: 'true' }, { logoX: -1 }, { logoY: Infinity }, { logoSize: 0 }, { logoSize: 81 }]) {
+    assert.throws(() => readLogoSettings(bad));
+  }
+  for (const [width, height] of [[3840, 2160], [2160, 3840], [64, 4096], [4096, 64]]) {
+    for (const logoX of [0, .5, 1]) for (const logoY of [0, .5, 1]) {
+      const box = logoBox(width, height, { ...LOGO_DEFAULTS, logoX, logoY, logoSize: 80 });
+      near(box.size, Math.min(width, height) * .8);
+      assert(box.x >= 0 && box.y >= 0 && box.x + box.size <= width && box.y + box.size <= height);
+    }
+  }
+});
 
 test('loop positions and velocities join smoothly, with moving, ordered anchors', () => {
   for (const seconds of [1, 6, 13, 20]) for (const speed of [.01, .12, .75, 1]) {
@@ -71,11 +86,15 @@ test('animation crop covers the entire loop, including moving edges and frozen p
 
 test('export settings support old setups and limit animation work before allocation', () => {
   assert.deepEqual(readExportSettings({}), EXPORT_DEFAULTS);
-  const settings = { ...EXPORT_DEFAULTS, exportFormat: 'GIF', width: 3840, height: 2160 };
-  assert.deepEqual(animationPlan(settings), { format: 'GIF', width: 960, height: 540, frames: 120, fps: 20, seconds: 6 });
+  const settings = { ...EXPORT_DEFAULTS, exportFormat: 'GIF', width: 3840, height: 2160, loopDuration: 1, loopFPS: 10 };
+  assert.deepEqual(animationPlan(settings), { format: 'GIF', width: 3840, height: 2160, frames: 10, fps: 10, seconds: 1 });
+  for (const [width, height] of [[1920, 1080], [2048, 2048], [2160, 3840], [128, 72]]) {
+    const plan = animationPlan({ ...settings, width, height, loopMaxEdge: 128 });
+    assert.equal(plan.width, width); assert.equal(plan.height, height);
+  }
   for (const bad of [{ exportFormat: 'WEBM' }, { loopDuration: 0 }, { loopDuration: 1.5 }, { loopFPS: 0 },
-    { loopMaxEdge: Infinity }, { loopMaxEdge: null }, { loopMaxEdge: '960' }]) assert.throws(() => readExportSettings(bad));
-  assert.throws(() => animationPlan({ ...settings, loopMaxEdge: 1920, loopDuration: 20, loopFPS: 30 }), /too large/);
+    { exportCropped: null }, { exportCropped: 'true' }]) assert.throws(() => readExportSettings(bad));
+  assert.throws(() => animationPlan({ ...settings, loopDuration: 20, loopFPS: 30 }), /too large/);
 });
 
 for (const format of ['GIF', 'APNG']) {

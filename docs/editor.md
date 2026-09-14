@@ -18,6 +18,8 @@ The middle anchors remain ordered between their neighbors. This intentionally pr
 
 Click the contour to select it and show its anchors. Click the empty canvas to deselect it. **Preview** hides all editing graphics. **Edit contour** restores them. Anchors have expanded hit targets for touch interaction.
 
+The Cook logo starts near the bottom-right corner. In edit mode, drag its square to move it or drag the upper-left handle to resize it while keeping its square aspect ratio and bottom-right position. Touch dragging works too. With the logo focused, arrow keys move it and **+ / −** resize it; Shift makes keyboard steps larger and pointer dragging finer. The logo stays inside the canvas and is 50% opaque in edit mode, 100% opaque in preview. Its original black square background is retained. The logo is excluded from PNG, GIF, and APNG exports and does not affect cropped export dimensions. Position, size, and visibility support undo/redo and are saved with the setup.
+
 ## Controls
 
 - **Gradient:** corner color, overall size, and falloff. Size uniformly scales the normalized contour about the bottom-right corner. Its percentage is the larger of the bottom and right reaches. A higher falloff concentrates the color closer to the corner; a lower value spreads it outward.
@@ -26,7 +28,8 @@ Click the contour to select it and show its anchors. Click the empty canvas to d
 - **Wave motion:** Animate toggles fluid motion. Amplitude (0–35%) sets deformation strength; Speed (0–1 Hz) sets the main wave frequency, with zero freezing the current pose. Wavelength (0.3–3 contour lengths) controls the spacing of the swell; Complexity (0–1) blends in smaller, overlapping ripples. Edge movement (0–1) controls how much A and D slide; zero pins both endpoints. Motion starts enabled unless the browser requests reduced motion. Disabling Animate restores the base contour.
 - **Finish:** smooth or linear blending for all styles. Smooth rendering also offers subtle fine-grain or ordered 4 × 4 dithering to reduce banding. The larger square-dot Ordered dither style is selected in Rendering.
 - **Middle anchors:** numeric controls for B and C, useful when the gradient is too small to drag individual points comfortably.
-- **Canvas & export:** choose PNG, GIF, or APNG under **File type**. Canvas presets include 4K UHD, 1080p, square, portrait, and custom dimensions. Width and height each accept 64–4096 pixels. GIF and APNG expose loop duration, frame rate, and maximum export edge controls.
+- **Logo:** Show logo toggles the artwork; Size % sets its square side to 4–80% of the shorter canvas dimension. Setups without logo settings start with the logo at its default bottom-right position.
+- **Canvas & export:** choose PNG, GIF, or APNG under **File type**. **Resolution** includes 4K UHD, 1080p, square, portrait, custom dimensions, and **Cropped**. Width and height each accept 64–4096 pixels. GIF and APNG expose loop duration and frame rate controls.
 
 ## Rendering styles
 
@@ -48,11 +51,14 @@ Pattern edges are antialiased at the render resolution. Very fine dots may look 
 
 **Export PNG** captures the currently displayed wave pose as a still image and renders the gradient at the selected output resolution, rather than enlarging a screenshot of the preview. It excludes the curve, points, labels, border, and all UI. The background is opaque black. Export uses a frozen copy of the settings, so changing the editor while an export runs does not change the in-progress output.
 
-To export an animation, open **Canvas & export**, select **GIF** or **APNG** as the file type, and click the top **Export GIF/APNG** button. Both formats repeat forever and include only the rendered gradient, with an opaque black background. Animated exports automatically crop away the unused black canvas above and to the left of the corner. One fixed crop contains the gradient's full extent across every frame, so the loop never shifts or clips as it moves. Cropping preserves the original pixels and dot spacing; PNG stills keep the full canvas.
+To export an animation, open **Canvas & export**, select **GIF** or **APNG** as the file type, and click the top **Export GIF/APNG** button. Both formats repeat forever and include only the rendered gradient, with an opaque black background.
+
+All standard resolutions export the full canvas at the selected pixel dimensions for PNG, GIF, and APNG. Choose **Resolution → Cropped** to remove the unused black canvas above and to the left of the corner. This renders at the current width and height, then takes one fixed crop containing the gradient's full extent across the loop. PNG captures the current pose within those same loop bounds. Cropping preserves the original pixels and dot spacing. Selecting another resolution restores full-canvas output; the choice is saved with your setup. Older setups default to full canvas.
 
 - **Loop seconds:** 1–20 seconds, default 6.
 - **Frame rate:** 10, 15, 20, 24, 25, or 30 frames per second, default 20.
-- **Max edge px:** 128–1920 pixels, default 960. The canvas is scaled proportionally to fit this limit, then cropped; the resulting animation can have a different aspect ratio. It never enlarges the canvas. The filename and completion message show the final cropped dimensions. PNG output still uses the full canvas dimensions.
+
+There is no additional animation downscaling. The filename and completion message show the final exported dimensions. Cropped output can have a different aspect ratio from the canvas.
 
 The loop starts at the current wave pose. Each wave component is fitted to a whole number of cycles within the chosen duration, keeping both the pose and motion continuous at the join. The endpoint frame is not duplicated. The exported motion can differ from live playback because its frequencies are adjusted to close the loop. Zero speed freezes the current pose; disabling Animate or setting amplitude to zero produces a static export.
 
