@@ -38,6 +38,7 @@ All styles use the editable contour, corner color, falloff, and wave animation. 
 
 - **Spacing % (0.5–6):** distance between dot centers, relative to the shorter canvas side.
 - **Dot size % (10–100):** square width as a percentage of the spacing; smaller values leave wider black gaps.
+- **Size fade % (0–100):** shrinks dots as the gradient darkens, in addition to fading their brightness. At 0, dots keep a fixed size (the default for existing setups). At 100, they progressively shrink toward zero at the dark edge; intermediate values soften the effect. Dot size still sets the maximum width near the bright corner, and spacing stays fixed.
 - **Tone levels (2–16):** number of brightness levels, including black and the selected corner color. Two levels produce a binary pattern; higher values give a more gradual fade.
 - **Contrast (0.25–3):** shapes dot brightness. Higher values darken the midtones; lower values spread brightness outward.
 

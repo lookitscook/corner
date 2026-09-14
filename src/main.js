@@ -188,7 +188,8 @@ window.CornerEngine = E;
     const rendering = folder('Rendering', true);
     addControl(rendering, 'renderStyle', 'Style', [RENDER_STYLES], () => changed(true));
     const renderLabels = {
-      orderedSpacing: 'Spacing %', orderedDotSize: 'Dot size %', orderedLevels: 'Tone levels', orderedContrast: 'Contrast',
+      orderedSpacing: 'Spacing %', orderedDotSize: 'Dot size %', orderedSizeFade: 'Size fade %',
+      orderedLevels: 'Tone levels', orderedContrast: 'Contrast',
     };
     for (const [key, range] of Object.entries(RENDER_RANGES)) {
       const c = addControl(rendering, key, renderLabels[key], range, value => {
@@ -197,6 +198,7 @@ window.CornerEngine = E;
         settings[key] = clean; changed(true);
       });
       c.domElement.closest('li').dataset.renderStyle = 'Ordered dither';
+      if (key === 'orderedSizeFade') c.domElement.title = '0 keeps a fixed dot size. 100 shrinks the squares as the gradient fades.';
     }
     const contour = folder('Contour', true);
     addControl(contour, 'preset', 'Starting shape', [[...Object.keys(PRESETS), 'Custom']], value => {

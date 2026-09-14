@@ -156,14 +156,15 @@ function stripeCoverage(position, thickness, footprint) {
 }
 
 function orderedIntensity(plan, col, py) {
-  const { model, cellPixels, orderedTones, toneColumns } = plan;
+  const { cellPixels, orderedTones, orderedSizes, toneColumns } = plan;
   const dx = plan.width - 1 - plan.startX - col, dy = plan.height - 1 - py;
   if (!dx && !dy) return 1; // Preserve the exact chosen corner color.
   const u = dx / cellPixels, v = dy / cellPixels;
   const cx = Math.round(u), cy = Math.round(v);
-  const footprint = 1 / cellPixels, size = model.pattern.orderedDotSize / 100;
+  const index = cy * toneColumns + cx;
+  const footprint = 1 / cellPixels, size = orderedSizes[index];
   const coverage = stripeCoverage(u, size, footprint) * stripeCoverage(v, size, footprint);
-  return orderedTones[cy * toneColumns + cx] * coverage;
+  return orderedTones[index] * coverage;
 }
 
 function renderPlan(ctx, width, height, model) {
@@ -182,16 +183,21 @@ function renderPlan(ctx, width, height, model) {
   const cellPixels = shortSide * p.orderedSpacing / 100;
   const plan = { ctx, width, height, startX, startY, rw, rh, xs, roots, model, cellPixels };
   if (p.renderStyle === 'Ordered dither') {
-    // Sample once per square so each dot has one consistent, ordered tone.
+    // Sample once per square so each dot has one consistent size and tone.
     const toneColumns = Math.ceil((rw - 1) / cellPixels) + 1;
     const toneRows = Math.ceil((rh - 1) / cellPixels) + 1;
     const tones = new Float32Array(toneColumns * toneRows), levels = p.orderedLevels - 1;
+    const sizes = new Float64Array(tones.length), sizeFade = p.orderedSizeFade / 100;
     for (let y = 0; y < toneRows; y++) for (let x = 0; x < toneColumns; x++) {
       const value = Math.pow(intensityAt(x * cellPixels / (width - 1), y * cellPixels / (height - 1), model), p.orderedContrast);
       const threshold = (BAYER[(y & 3) * 4 + (x & 3)] + .5) / 16;
-      tones[y * toneColumns + x] = Math.floor(value * levels + threshold) / levels;
+      const index = y * toneColumns + x;
+      tones[index] = Math.floor(value * levels + threshold) / levels;
+      // Use the continuous tone, before Bayer quantization, to avoid size steps.
+      // At full strength the square's area follows the tone; zero keeps fixed dots.
+      sizes[index] = p.orderedDotSize / 100 * (1 - sizeFade + sizeFade * Math.sqrt(value));
     }
-    plan.orderedTones = tones; plan.toneColumns = toneColumns;
+    plan.orderedTones = tones; plan.orderedSizes = sizes; plan.toneColumns = toneColumns;
   }
   return plan;
 }

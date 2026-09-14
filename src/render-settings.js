@@ -1,10 +1,10 @@
 export const RENDER_STYLES = ['Smooth', 'Ordered dither'];
 export const RENDER_DEFAULTS = Object.freeze({
   renderStyle: 'Smooth',
-  orderedSpacing: 1.8, orderedDotSize: 65, orderedLevels: 8, orderedContrast: 1,
+  orderedSpacing: 1.8, orderedDotSize: 65, orderedSizeFade: 0, orderedLevels: 8, orderedContrast: 1,
 });
 export const RENDER_RANGES = {
-  orderedSpacing: [.5, 6, .1], orderedDotSize: [10, 100, 1],
+  orderedSpacing: [.5, 6, .1], orderedDotSize: [10, 100, 1], orderedSizeFade: [0, 100, 1],
   orderedLevels: [2, 16, 1], orderedContrast: [.25, 3, .05],
 };
 

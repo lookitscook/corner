@@ -253,7 +253,7 @@ test('Ordered dither controls, history, setup persistence, and frozen PNG export
   const styleSelect = page.locator('[data-control="renderStyle"] select');
   expect(await styleSelect.locator('option').allTextContents()).toEqual(['Smooth', 'Ordered dither']);
   await styleSelect.selectOption('Ordered dither');
-  const parameters = { orderedSpacing: 2.5, orderedDotSize: 75, orderedLevels: 6, orderedContrast: .8 };
+  const parameters = { orderedSpacing: 2.5, orderedDotSize: 75, orderedLevels: 6, orderedContrast: .8, orderedSizeFade: 100 };
   for (const [key, value] of Object.entries(parameters)) {
     await expect(control(page, key)).toBeVisible();
     await setNumber(page, key, value);
@@ -318,6 +318,13 @@ test('Ordered dither controls, history, setup persistence, and frozen PNG export
     const pixels = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     return bitmap.width === 3840 && bitmap.height === 2160 && pixels.every((v, i) => v === window.__expectedPixels[i]);
   })).toBe(true);
+
+  // Existing ordered-dither setups retain their fixed-size squares.
+  const fixedSizeSetup = structuredClone(configured);
+  delete fixedSizeSetup.settings.orderedSizeFade;
+  await page.evaluate(s => CornerStudio.setState(s), fixedSizeSetup);
+  expect((await state(page)).settings.renderStyle).toBe('Ordered dither');
+  expect((await state(page)).settings.orderedSizeFade).toBe(0);
 
   // A pre-pattern setup must still load with its original rendering style.
   const legacy = structuredClone(configured);
