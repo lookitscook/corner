@@ -1,10 +1,6 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  root: 'corner-gradient',
-  base: './',
-  build: {
-    outDir: '../dist',
-    emptyOutDir: true,
-  },
+  // GitHub Pages builds use /corner/; local development uses the site root.
+  base: process.env.VITE_BASE_PATH || '/',
 });

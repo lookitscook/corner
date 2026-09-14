@@ -4,7 +4,7 @@ A small browser-based editor for a black canvas with a configurable bottom-right
 
 ## Run
 
-From the repository root, run `npm ci` and `npm run dev`. Build with `npm run build`, then serve the generated `dist/` folder from a static host. `npm run build:standalone` generates a portable `corner-gradient.html` file that opens directly in a browser.
+From the repository root, run `npm ci` and `npm run dev`. Build with `npm run build` and preview with `npm run preview`.
 
 The inspector uses dat.gui 0.7.9, installed through npm and bundled locally by Vite. No CDN, Python, backend, or CMS is required. See the [project README](../README.md) for setup and verification commands.
 
@@ -33,7 +33,7 @@ Click the contour to select it and show its anchors. Click the empty canvas to d
 
 **Save setup** writes a small JSON file containing the base contour, wave parameters, and rendering settings (the playback phase is not saved). Older setups load with animation disabled. **Load setup** validates and restores that file. Unrecognized formats, invalid colors, invalid dimensions, non-finite coordinates, crossed anchors, and unanchored endpoints are rejected before the current setup is changed.
 
-The most recent setup is also saved to browser local storage when available. Local-file storage behavior depends on the browser; use Save setup for a portable copy. This app makes no application-data uploads or external requests.
+The most recent setup is also saved to browser local storage when available. Use Save setup for a portable copy across browsers or sites. This app makes no application-data uploads or external requests.
 
 ## Keyboard
 
@@ -53,7 +53,7 @@ Undo and redo retain up to 80 committed states. Reset is undoable.
 
 ## Rendering implementation
 
-`engine.js` contains the standalone geometry and Canvas 2D renderer. Anchors are normalized distances from the bottom-right corner. For the interpolating mode, shape-preserving Hermite derivatives are converted into cubic Bézier control points. The same segments are used for the SVG editing overlay and the color field.
+`src/engine.js` contains the geometry and Canvas 2D renderer. Anchors are normalized distances from the bottom-right corner. For the interpolating mode, shape-preserving Hermite derivatives are converted into cubic Bézier control points. The same segments are used for the SVG editing overlay and the color field.
 
 Wave motion layers three traveling sine components with different speeds and wavelengths. Positive coordinate gaps are reweighted smoothly, keeping anchors ordered without abrupt clamping. The same animated points drive the overlay and gradient. Playback freezes during pointer drags; an inverse transform maps edits back to the base contour. Animation uses elapsed frame time, pauses in hidden tabs, and never writes transient poses into history or storage.
 
@@ -63,7 +63,7 @@ A 4096-interval radial lookup table accelerates the per-pixel work. Its directio
 
 ## Source files
 
-`index.html` provides the Vite entry page. `styles.css` contains the responsive layout and dat.gui theme. `engine.js` exports geometry and rendering as an ES module. `app.js` imports the engine and npm-installed dat.gui, and owns interaction, state/history, and exports. `../scripts/build-standalone.js` inlines the Vite output into a portable HTML file using Node.js.
+`index.html` provides the Vite entry page. `src/styles.css` contains the responsive layout and dat.gui theme. `src/engine.js` exports geometry and rendering as an ES module. `src/main.js` imports the engine, stylesheet, and npm-installed dat.gui, and owns interaction, state/history, and exports.
 
 ## Verification
 

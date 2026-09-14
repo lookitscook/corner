@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
 
 const state = page => page.evaluate(() => CornerStudio.getState());
 const control = (page, key) => page.locator(`[data-control="${key}"] input`).last();
@@ -52,7 +50,7 @@ test.beforeEach(async ({ page }) => {
   });
   page.__errors = errors;
   page.__externalRequests = externalRequests;
-  await page.goto('/');
+  await page.goto('./');
   await page.waitForFunction(() => Boolean(window.CornerStudio));
   await expect(page.locator('#gui-host .dg.main')).toBeVisible();
   await expect(page.locator('#library-badge')).toHaveText('dat.gui');
@@ -228,16 +226,6 @@ test('desktop layout fits without horizontal overflow', async ({ page }, testInf
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.screenshot({ path: testInfo.outputPath('desktop.png') });
-});
-
-test('portable standalone HTML includes the editor and controls', async ({ page }) => {
-  await page.goto(pathToFileURL(resolve('corner-gradient.html')).href);
-  await page.waitForFunction(() => Boolean(window.CornerStudio));
-  await expect(page.locator('#gui-host .dg.main')).toBeVisible();
-  await disableWave(page);
-  await setNumber(page, 'size', 60);
-  same((await state(page)).points[0].x, .6);
-  expect(await page.locator('script[src], link[rel="stylesheet"]').count()).toBe(0);
 });
 
 test.describe('mobile', () => {

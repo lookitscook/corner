@@ -1,6 +1,7 @@
 /* Corner Gradient Studio — Vite entry point. */
 import { GUI } from 'dat.gui';
 import E from './engine.js';
+import './styles.css';
 
 // Preserve the renderer API for integrations and browser verification.
 window.CornerEngine = E;
